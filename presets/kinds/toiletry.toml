@@ -1,0 +1,7 @@
+# wherebox kind preset `toiletry`. Override it by copying this file to
+# <config dir>/presets/kinds/toiletry.toml (see docs/presets.md).
+name = "toiletry"
+description = "Toiletries: soap, toothpaste, shampoo"
+category = "consumable"
+tracks = ["par_level"]
+notes = "Nothing to date; set a par level (`wherebox par`) to restock through `wherebox shopping`."

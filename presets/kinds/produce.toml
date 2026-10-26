@@ -1,0 +1,12 @@
+# wherebox kind preset `produce`. Override it by copying this file to
+# <config dir>/presets/kinds/produce.toml (see docs/presets.md).
+name = "produce"
+description = "Fresh fruit and vegetables"
+category = "food"
+tracks = ["best_by", "opened_at"]
+notes = "Shelf life varies by item (FoodKeeper: leaf lettuce 3-7 days, carrots 2-3 weeks, apples 4-6 weeks refrigerated); enter --best-by."
+
+[[sources]]
+covers = "notes"
+cite = "USDA FSIS FoodKeeper data, version 128 (2018): Apples (#248): refrigerate 4-6 weeks; Lettuce, leaf (#291): 3-7 days; Carrots (#279): 2-3 weeks"
+url = "https://catalog.data.gov/dataset/fsis-foodkeeper-data"

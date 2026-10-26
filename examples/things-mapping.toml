@@ -1,0 +1,15 @@
+# Column mapping for examples/things.csv (a generic spreadsheet export).
+#
+#   wherebox import examples/things.csv --mapping examples/things-mapping.toml
+#
+# Headers that match a field name (or a common synonym such as Item, Qty,
+# Paid, Bought, Brand, Tags) need no entry; list only the rest. Custom
+# fields are `field.<Name>`.
+date_format = "%m/%d/%Y"
+
+[columns]
+location = "Room"
+"field.Color" = "Colour"
+
+[defaults]
+owner_entity = "Example Family Trust"

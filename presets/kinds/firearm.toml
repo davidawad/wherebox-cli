@@ -1,0 +1,7 @@
+# wherebox kind preset `firearm`. Override it by copying this file to
+# <config dir>/presets/kinds/firearm.toml (see docs/presets.md).
+name = "firearm"
+description = "Firearms"
+category = "valuable"
+tracks = ["serial", "appraisal", "replacement_value"]
+notes = "Reappraise on your insurer's schedule for scheduled items; record it with `wherebox value` and a Reappraise By field."

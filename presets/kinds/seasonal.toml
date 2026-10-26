@@ -1,0 +1,7 @@
+# wherebox kind preset `seasonal`. Override it by copying this file to
+# <config dir>/presets/kinds/seasonal.toml (see docs/presets.md).
+name = "seasonal"
+description = "Paint, sealant, fuel and chemicals"
+category = "consumable"
+tracks = ["opened_at", "shelf_life", "hazmat"]
+notes = "Shelf life is on the label; set field Hazmat=yes for flammable or toxic products."

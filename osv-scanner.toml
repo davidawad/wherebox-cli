@@ -1,0 +1,10 @@
+# Acknowledged advisories (osv-scanner, run by the quality gate).
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2023-0071"
+reason = """\
+rsa 0.9 Marvin attack: a timing side channel in RSA decryption, no fixed release yet. \
+It comes in through age's `ssh` feature (ssh-rsa keys). wherebox only decrypts locally, \
+once per command, with the user's own key; nobody can time repeated decryptions remotely, \
+which the attack needs. ed25519 keys (the default first choice) never use rsa. \
+Revisit when rsa 0.10 is released and age adopts it."""

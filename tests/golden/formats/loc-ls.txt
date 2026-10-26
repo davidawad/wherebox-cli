@@ -1,0 +1,9 @@
+TREE           KIND       ITEMS  VALUE
+─────────────  ─────────  ─────  ───────
+Lake House     property       5  1738.99
+  Garage       room           3   238.99
+    Shelf 2    container      1   149.99
+  Kitchen      room           1     0.00
+    Fridge     container      1     0.00
+  Living Room  room           1  1500.00
+(no location)                 1     0.00

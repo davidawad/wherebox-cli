@@ -1,0 +1,40 @@
+# Fast default CI: fmt, clippy -D warnings and tests on one runner, in minutes.
+#
+# aarch64 Linux builds fsqlite on stable Rust (no nightly needed there), and
+# rust-cache keeps dependency builds warm. The slow cross-platform matrix
+# (Windows, macOS x86_64/arm64, nightly x86_64) lives in ci-full.yml: run it by
+# hand (Actions > CI full matrix > Run workflow, or `gh workflow run ci-full.yml`);
+# it also runs on version tags and weekly.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTUP_TOOLCHAIN: stable
+
+jobs:
+  test:
+    name: linux-aarch64 (stable)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust stable
+        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: stable
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked --no-fail-fast

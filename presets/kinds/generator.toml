@@ -1,0 +1,7 @@
+# wherebox kind preset `generator`. Override it by copying this file to
+# <config dir>/presets/kinds/generator.toml (see docs/presets.md).
+name = "generator"
+description = "Generators"
+category = "durable"
+tracks = ["warranty", "serial", "service"]
+notes = "Service intervals follow the owner's manual; record them as Next Service."

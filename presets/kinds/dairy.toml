@@ -1,0 +1,12 @@
+# wherebox kind preset `dairy`. Override it by copying this file to
+# <config dir>/presets/kinds/dairy.toml (see docs/presets.md).
+name = "dairy"
+description = "Milk, cheese, yogurt, butter, cream"
+category = "food"
+tracks = ["best_by", "opened_at"]
+notes = "Shelf life varies too much across dairy for one default; enter the package date (--best-by). FoodKeeper: milk by package date, yogurt 1-2 weeks, hard cheese 6 months, butter 1-2 months refrigerated."
+
+[[sources]]
+covers = "notes"
+cite = "USDA FSIS FoodKeeper data, version 128 (2018): Milk (#27): package use-by date; Yogurt (#33): 1-2 weeks; Cheese, hard (#3): 6 months; Butter (#1): 1-2 months"
+url = "https://catalog.data.gov/dataset/fsis-foodkeeper-data"

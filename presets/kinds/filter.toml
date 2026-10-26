@@ -1,0 +1,16 @@
+# wherebox kind preset `filter`. Override it by copying this file to
+# <config dir>/presets/kinds/filter.toml (see docs/presets.md).
+name = "filter"
+description = "Filters: HVAC air, water, refrigerator"
+category = "consumable"
+tracks = ["installed_at", "replace"]
+notes = "Intervals are for HVAC air filters; water and refrigerator filters follow the maker's interval (edit Replace By)."
+
+[intervals]
+replace = "3m"
+inspect = "1m"
+
+[[sources]]
+covers = "replace, inspect"
+cite = "ENERGY STAR Maintenance Checklist: check the HVAC filter every month, change it at least every 3 months"
+url = "https://www.energystar.gov/saveathome/heating-cooling/maintenance-checklist"

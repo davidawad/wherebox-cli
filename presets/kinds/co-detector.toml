@@ -1,0 +1,7 @@
+# wherebox kind preset `co-detector`. Override it by copying this file to
+# <config dir>/presets/kinds/co-detector.toml (see docs/presets.md).
+name = "co-detector"
+description = "Carbon monoxide alarms"
+category = "safety"
+tracks = ["installed_at", "replace", "inspection", "expiration"]
+notes = "Replace on the maker's schedule (many print an end-of-life date); no default interval is filled."

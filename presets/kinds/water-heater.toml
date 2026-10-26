@@ -1,0 +1,7 @@
+# wherebox kind preset `water-heater`. Override it by copying this file to
+# <config dir>/presets/kinds/water-heater.toml (see docs/presets.md).
+name = "water-heater"
+description = "Water heaters"
+category = "durable"
+tracks = ["warranty", "serial", "service"]
+notes = "Service intervals follow the owner's manual; record them as Next Service."

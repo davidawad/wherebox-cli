@@ -1,0 +1,16 @@
+# wherebox kind preset `leftovers`. Override it by copying this file to
+# <config dir>/presets/kinds/leftovers.toml (see docs/presets.md).
+name = "leftovers"
+description = "Cooked leftovers"
+category = "food"
+tracks = ["use_by", "frozen_at"]
+
+[shelf_life]
+date = "use_by"
+fridge = "3-4d"
+freezer = "1-3m"
+
+[[sources]]
+covers = "fridge, freezer"
+cite = "USDA FSIS FoodKeeper data, version 128 (2018): Leftovers with meat, fish, poultry or egg (#173): refrigerate 3-4 days, freeze 2-3 months; without (#174): 3-4 days, 1-2 months; pizza (#175): 3-4 days, 1-2 months"
+url = "https://catalog.data.gov/dataset/fsis-foodkeeper-data"

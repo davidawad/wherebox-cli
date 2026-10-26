@@ -1,0 +1,15 @@
+# wherebox kind preset `smoke-detector`. Override it by copying this file to
+# <config dir>/presets/kinds/smoke-detector.toml (see docs/presets.md).
+name = "smoke-detector"
+description = "Smoke alarms"
+category = "safety"
+tracks = ["installed_at", "replace", "inspection"]
+
+[intervals]
+replace = "10y"
+inspect = "1m"
+
+[[sources]]
+covers = "replace, inspect"
+cite = "NFPA, Smoke alarms: replace all smoke alarms when they are 10 years old; test them at least once a month"
+url = "https://www.nfpa.org/education-and-research/home-fire-safety/smoke-alarms"

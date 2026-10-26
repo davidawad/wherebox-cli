@@ -1,0 +1,14 @@
+# wherebox kind preset `hvac`. Override it by copying this file to
+# <config dir>/presets/kinds/hvac.toml (see docs/presets.md).
+name = "hvac"
+description = "Heating and cooling equipment: furnace, heat pump, air conditioner"
+category = "durable"
+tracks = ["warranty", "serial", "service"]
+
+[intervals]
+service = "1y"
+
+[[sources]]
+covers = "service"
+cite = "ENERGY STAR Maintenance Checklist: have a contractor check the cooling system each spring and the heating system each fall"
+url = "https://www.energystar.gov/saveathome/heating-cooling/maintenance-checklist"

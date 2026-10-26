@@ -1,0 +1,15 @@
+# wherebox kind preset `eggs`. Override it by copying this file to
+# <config dir>/presets/kinds/eggs.toml (see docs/presets.md).
+name = "eggs"
+description = "Raw eggs in the shell"
+category = "food"
+tracks = ["best_by"]
+
+[shelf_life]
+date = "best_by"
+fridge = "3-5w"
+
+[[sources]]
+covers = "fridge"
+cite = "USDA FSIS FoodKeeper data, version 128 (2018): Eggs, in shell (#21): refrigerate 3-5 weeks; freezing not recommended"
+url = "https://catalog.data.gov/dataset/fsis-foodkeeper-data"

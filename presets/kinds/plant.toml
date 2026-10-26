@@ -1,0 +1,7 @@
+# wherebox kind preset `plant`. Override it by copying this file to
+# <config dir>/presets/kinds/plant.toml (see docs/presets.md).
+name = "plant"
+description = "House plants"
+category = "other"
+tracks = ["care"]
+notes = "Record a care schedule as a custom field."

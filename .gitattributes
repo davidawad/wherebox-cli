@@ -1,0 +1,6 @@
+# Keep LF on every OS (Windows checkouts default to core.autocrlf=true):
+# golden reports, fixtures and README samples are compared byte for byte.
+* text=auto eol=lf
+*.xlsx binary
+*.db binary
+*.png binary

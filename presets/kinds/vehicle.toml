@@ -1,0 +1,7 @@
+# wherebox kind preset `vehicle`. Override it by copying this file to
+# <config dir>/presets/kinds/vehicle.toml (see docs/presets.md).
+name = "vehicle"
+description = "Cars, motorcycles, boats, trailers"
+category = "durable"
+tracks = ["warranty", "serial", "service", "registration"]
+notes = "Service intervals follow the owner's manual; record them as Next Service."

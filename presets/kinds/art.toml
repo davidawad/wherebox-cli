@@ -1,0 +1,7 @@
+# wherebox kind preset `art`. Override it by copying this file to
+# <config dir>/presets/kinds/art.toml (see docs/presets.md).
+name = "art"
+description = "Art"
+category = "valuable"
+tracks = ["appraisal", "replacement_value"]
+notes = "Reappraise on your insurer's schedule for scheduled items; record it with `wherebox value` and a Reappraise By field."

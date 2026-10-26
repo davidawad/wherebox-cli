@@ -1,0 +1,5 @@
+| asset_id | name | quantity | location | status | value | labels |
+|---|---|---|---|---|---|---|
+| 000-002 | Red Toolbox | 1 | Lake House / Garage | owned | 89.00 | tools |
+| 000-003 | Socket Set | 1 | Lake House / Garage | owned |  |  |
+| 000-001 | Cordless Drill | 1 | Lake House / Garage / Shelf 2 | owned | 149.99 | power,tools |

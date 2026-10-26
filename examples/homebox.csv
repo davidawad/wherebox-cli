@@ -1,0 +1,7 @@
+HB.import_ref,HB.location,HB.label,HB.quantity,HB.name,HB.asset_id,HB.description,HB.insured,HB.serial_number,HB.model_number,HB.manufacturer,HB.notes,HB.purchase_from,HB.purchase_price,HB.purchase_time,HB.lifetime_warranty,HB.warranty_expires,HB.warranty_details,HB.field.Owner Entity,HB.field.Replacement Value
+01JAEXAMP1E000000000000001,Lake House / Garage / Shelf 2,"tools,power",1,Cordless Drill,000-001,,true,DCD777-0042,DCD777,DeWalt,"Two batteries, one charger",Home Depot,149.99,2024-05-01,false,2027-05-01,3 year limited,Example Family Trust,
+01JAEXAMP1E000000000000002,Lake House / Garage,tools,1,Rolling Toolbox,000-002,,false,,,Craftsman,,Lowe's,89.00,2019-11-29,false,,,,
+01JAEXAMP1E000000000000003,Lake House / Living Room,electronics,1,"OLED TV, 65""",000-003,Wall mounted,true,LG65-9911,OLED65C3,LG,,Costco,1899.99,2023-11-24,false,2025-11-24,,Example Family Trust,1500
+01JAEXAMP1E000000000000004,Lake House / Living Room,furniture,1,Sectional Sofa,000-004,,true,,KIVIK,IKEA,,IKEA,1299.00,2022-08-14,false,,,Example Holdings LLC,
+01JAEXAMP1E000000000000005,Lake House / Bedroom / Closet,jewelry,1,Diamond Ring,000-005,Appraised 2024,true,,,,"Keep the appraisal with the receipt",Blue Nile,4200.00,2015-06-20,true,,,Example Family Trust,6800
+01JAEXAMP1E000000000000006,Lake House / Kitchen,appliances,1,Refrigerator,000-006,,true,RF28-55120,RF28T5001SR,Samsung,,Best Buy,1649.00,2021-03-02,false,2026-03-02,Extended 5 years,,

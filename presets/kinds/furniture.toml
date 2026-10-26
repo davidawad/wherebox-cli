@@ -1,0 +1,12 @@
+# wherebox kind preset `furniture`. Override it by copying this file to
+# <config dir>/presets/kinds/furniture.toml (see docs/presets.md).
+name = "furniture"
+description = "Furniture"
+category = "durable"
+tracks = ["warranty"]
+alert_days = 90
+notes = "Warranty terms vary by product; enter --warranty-expires from the receipt."
+
+[[sources]]
+covers = "alert_days (warranty alert; matches `report warranties --expiring 90d`)"
+cite = "docs/SPEC.md (Presets table): wherebox policy, not an external fact"

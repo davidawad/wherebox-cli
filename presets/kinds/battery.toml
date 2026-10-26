@@ -1,0 +1,7 @@
+# wherebox kind preset `battery`. Override it by copying this file to
+# <config dir>/presets/kinds/battery.toml (see docs/presets.md).
+name = "battery"
+description = "Batteries (spares)"
+category = "consumable"
+tracks = ["expiration"]
+notes = "Enter the printed expiration date (--expires)."

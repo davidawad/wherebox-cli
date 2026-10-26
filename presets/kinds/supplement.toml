@@ -1,0 +1,12 @@
+# wherebox kind preset `supplement`. Override it by copying this file to
+# <config dir>/presets/kinds/supplement.toml (see docs/presets.md).
+name = "supplement"
+description = "Vitamins and supplements"
+category = "consumable"
+tracks = ["expiration"]
+alert_days = 30
+notes = "Enter the printed expiration date (--expires)."
+
+[[sources]]
+covers = "alert_days"
+cite = "docs/SPEC.md (Presets table): wherebox policy, not an external fact"

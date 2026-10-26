@@ -1,0 +1,19 @@
+HB.import_ref,HB.location,HB.label,HB.quantity,HB.name,HB.manufacturer,HB.purchase_from,HB.purchase_price,HB.purchase_time,HB.notes,HB.field.Source,HB.field.Kind,HB.field.ASIN,HB.field.Recurring,HB.field.Purchase Count,HB.field.Avg Interval Days
+amazon:111-0000001-0000001:B0TOWEL001,Lake House / Pantry,"household,consumable,amazon",2,Paper Towels 6-pack,Bounty,Amazon,19.99,2025-06-01,,amazon-orders:111-0000001-0000001,consumable,B0TOWEL001,true,4,31
+amazon:111-0000002-0000002:B0TOWEL001,Lake House / Pantry,"household,consumable,amazon",2,Paper Towels 6-pack,Bounty,Amazon,19.99,2025-07-01,,amazon-orders:111-0000002-0000002,consumable,B0TOWEL001,true,4,31
+amazon:111-0000003-0000003:B0TOWEL001,Lake House / Pantry,"household,consumable,amazon",2,Paper Towels 6-pack,Bounty,Amazon,21.49,2025-08-05,,amazon-orders:111-0000003-0000003,consumable,B0TOWEL001,true,4,31
+amazon:111-0000004-0000004:B0TOWEL001,Lake House / Pantry,"household,consumable,amazon",2,Paper Towels 6-pack,Bounty,Amazon,21.49,2025-09-04,Subscribe & Save,amazon-orders:111-0000004-0000004,consumable,B0TOWEL001,true,4,31
+amazon:111-0000005-0000005:B0TOWEL001,Rental apartment / Kitchen,"household,consumable,amazon",1,Paper Towels 6-pack,Bounty,Amazon,21.49,2025-11-01,,amazon-orders:111-0000005-0000005,consumable,B0TOWEL001,true,1,31
+amazon:111-0000006-0000006:B0COFFEE01,Lake House / Kitchen,"grocery,food,amazon",1,Coffee Pods 72ct,Peet's,Amazon,42.00,2025-12-01,,amazon-orders:111-0000006-0000006,consumable,B0COFFEE01,true,3,10
+amazon:111-0000007-0000007:B0COFFEE01,Lake House / Kitchen,"grocery,food,amazon",1,Coffee Pods 72ct,Peet's,Amazon,42.00,2025-12-10,,amazon-orders:111-0000007-0000007,consumable,B0COFFEE01,true,3,10
+amazon:111-0000008-0000008:B0COFFEE01,Lake House / Kitchen,"grocery,food,amazon",1,Coffee Pods 72ct,Peet's,Amazon,44.00,2025-12-20,,amazon-orders:111-0000008-0000008,consumable,B0COFFEE01,true,3,10
+amazon:111-0000009-0000009:B0INK00001,Lake House / Office,"office,consumable,amazon",1,Printer Ink XL,Epson,Amazon,34.99,2023-01-10,,amazon-orders:111-0000009-0000009,consumable,B0INK00001,true,3,60
+amazon:111-0000010-0000010:B0INK00001,Lake House / Office,"office,consumable,amazon",1,Printer Ink XL,Epson,Amazon,34.99,2023-03-10,,amazon-orders:111-0000010-0000010,consumable,B0INK00001,true,3,60
+amazon:111-0000011-0000011:B0INK00001,Lake House / Office,"office,consumable,amazon",1,Printer Ink XL,Epson,Amazon,34.99,2023-05-10,,amazon-orders:111-0000011-0000011,consumable,B0INK00001,true,3,60
+amazon:111-0000012-0000012:B0OIL00001,Lake House / Kitchen,"grocery,food,amazon",1,Olive Oil 1L,Kirkland,Amazon,15.50,2025-08-20,,amazon-orders:111-0000012-0000012,,B0OIL00001,true,2,60
+amazon:111-0000013-0000013:B0OIL00001,Lake House / Kitchen,"grocery,food,amazon",1,Olive Oil 1L,Kirkland,Amazon,15.50,2025-10-15,,amazon-orders:111-0000013-0000013,,B0OIL00001,true,2,60
+amazon:111-0000014-0000014:B0VAC00001,Lake House / Hall Closet,"home,durable,amazon",1,Cordless Vacuum,Dyson,Amazon,299.99,2024-03-15,,amazon-orders:111-0000014-0000014,durable,B0VAC00001,false,1,
+amazon:111-0000015-0000015:B0SCALE001,Lake House / Kitchen,"kitchen,durable,amazon",1,Kitchen Scale,Etekcity,Amazon,24.99,2025-02-10,,amazon-orders:111-0000015-0000015,durable,B0SCALE001,false,2,
+amazon:111-0000016-0000016:B0SCALE001,Lake House / Kitchen,"kitchen,durable,amazon",1,Kitchen Scale,Etekcity,Amazon,24.99,2025-04-02,second one for baking,amazon-orders:111-0000016-0000016,durable,B0SCALE001,false,2,
+amazon:111-0000017-0000017:B0CHAIR001,Lake House / Dining Room,"furniture,durable,amazon",4,Dining Chair,Zinus,Amazon,120.00,2023-08-20,,amazon-orders:111-0000017-0000017,durable,B0CHAIR001,false,1,
+amazon:111-0000018-0000018:B0MIXER001,Lake House / Kitchen,"kitchen,durable,amazon",1,Stand Mixer,KitchenAid,Amazon,249.00,2014-06-01,,amazon-orders:111-0000018-0000018,durable,B0MIXER001,false,1,

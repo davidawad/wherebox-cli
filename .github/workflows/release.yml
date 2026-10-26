@@ -1,0 +1,115 @@
+# Prebuilt binaries for every supported target on a version tag (v*).
+#
+# Each target builds natively with the toolchain it needs (nightly on x86_64
+# and Windows, stable on aarch64; see rust-toolchain.toml), so users and the
+# Homebrew formula never need a nightly toolchain. Assets per target:
+#   wherebox-cli-<tag>-<target>.tar.gz (.zip on Windows) + .sha256
+# plus one SHA256SUMS covering every archive.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build, e.g. v0.3.0"
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 22.04 images keep the glibc requirement low (2.35).
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+            toolchain: nightly
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-22.04-arm
+            toolchain: stable
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            toolchain: stable
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+            toolchain: nightly
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            toolchain: nightly
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.toolchain }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+      - run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Package
+        shell: bash
+        run: |
+          name="wherebox-cli-$TAG-${{ matrix.target }}"
+          mkdir "$name"
+          cp README.md LICENSE "$name/"
+          if [[ "${{ matrix.target }}" == *windows* ]]; then
+            cp "target/${{ matrix.target }}/release/wherebox.exe" "$name/"
+            7z a -tzip "$name.zip" "$name" >/dev/null
+            archive="$name.zip"
+          else
+            cp "target/${{ matrix.target }}/release/wherebox" "$name/"
+            tar -czf "$name.tar.gz" "$name"
+            archive="$name.tar.gz"
+          fi
+          if command -v sha256sum >/dev/null; then
+            sha256sum "$archive" >"$archive.sha256"
+          else
+            shasum -a 256 "$archive" >"$archive.sha256"
+          fi
+          cat "$archive.sha256"
+          echo "ARCHIVE=$archive" >>"$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            ${{ env.ARCHIVE }}
+            ${{ env.ARCHIVE }}.sha256
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: cat *.sha256 | sort -k2 >SHA256SUMS && cat SHA256SUMS
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" dist/* --generate-notes --verify-tag --repo "$GITHUB_REPOSITORY"
+          fi

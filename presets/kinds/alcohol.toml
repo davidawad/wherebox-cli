@@ -1,0 +1,12 @@
+# wherebox kind preset `alcohol`. Override it by copying this file to
+# <config dir>/presets/kinds/alcohol.toml (see docs/presets.md).
+name = "alcohol"
+description = "Beer, wine and spirits"
+category = "food"
+tracks = ["best_by"]
+notes = "Spirits keep indefinitely, so no date is filled; FoodKeeper: red wine 3-5 years, white 1-2 years unopened. Beer: enter the package date."
+
+[[sources]]
+covers = "notes"
+cite = "USDA FSIS FoodKeeper data, version 128 (2018): Red wine (#462): 3-5 years; White wine (#463): 1-2 years; Hard liquors (#539): indefinitely"
+url = "https://catalog.data.gov/dataset/fsis-foodkeeper-data"

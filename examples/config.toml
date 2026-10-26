@@ -1,0 +1,21 @@
+# Example wherebox config (~/.config/wherebox-cli/config.toml).
+# Every setting can also come from WHEREBOX_* environment variables or flags;
+# see `wherebox config keys`.
+
+# Property used when --profile is not given.
+profile = "lake-house"
+# Look-ahead for `wherebox expiring`.
+expiring_within = "5d"
+date_format = "%Y-%m-%d"
+timezone = "America/New_York"
+
+[csv]
+delimiter = ","
+
+# Properties (there are no built-in ones). db_path is
+# optional; the default is <data dir>/wherebox-cli/profiles/<name>.db.
+[profiles.lake-house]
+title = "Lake House"
+address = "1 Shore Rd"
+db_path = "~/vaults/lake-house.db"
+# rented = true   # a rental: insurance reports cover contents only

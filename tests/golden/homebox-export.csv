@@ -1,0 +1,10 @@
+HB.import_ref,HB.location,HB.label,HB.quantity,HB.name,HB.asset_id,HB.description,HB.insured,HB.serial_number,HB.model_number,HB.manufacturer,HB.notes,HB.purchase_from,HB.purchase_price,HB.purchase_time,HB.lifetime_warranty,HB.warranty_expires,HB.warranty_details,HB.sold_to,HB.sold_time,HB.sold_price,HB.sold_notes,HB.field.Owner Entity,HB.field.Replacement Value,HB.field.Status,HB.field.Unit,HB.field.Lot Qty,HB.field.Acquired,HB.field.Expires,HB.field.Lot Status,HB.field.Color
+01J9W000000000000000000007,,,4,Dining Chair,000-007,,false,,,,,,0.00,,false,,,,,,,,,owned,,,,,,
+01J9W000000000000000000002,Lake House / Garage,tools,1,Red Toolbox,000-002,,false,,,Craftsman,,,89.00,2019-11-29,false,,,,,,,,,owned,,,,,,
+01J9W000000000000000000003,Lake House / Garage,,1,Socket Set,000-003,,false,,,Craftsman,"Metric and SAE
+Inside: Red Toolbox (wherebox:01J9W000000000000000000002)",,,,false,,,,,,,,,owned,,,,,,
+01J9W000000000000000000001,Lake House / Garage / Shelf 2,"power,tools",1,Cordless Drill,000-001,,true,DCD777-0042,DCD777,DeWalt,"Two batteries, one charger",Home Depot,149.99,2024-05-01,false,2027-05-01,3 year limited,,,,,Awad Family Trust,,owned,,,,,,yellow
+01J9W000000000000000000006#lot:01J9W0000000000000000ABC01,Lake House / Kitchen / Fridge,food,2,Milk,000-006,,false,,,,,,,,false,,,,,,,,,owned,l,1.5,2026-01-02,2026-01-12,open,
+01J9W000000000000000000006#lot:01J9W0000000000000000ABC02,Lake House / Kitchen / Fridge,food,1,Milk,,,false,,,,,,,,false,,,,,,,,,owned,l,1,2026-01-05,2026-01-19,sealed,
+01J9W000000000000000000005,Lake House / Living Room,,1,Old Plasma TV,000-005,,false,,,Panasonic,,,999.00,2012-03-01,false,,,Neighbor,2024-01-15,75.00,Cash,,,sold,,,,,,
+01J9W000000000000000000004,Lake House / Living Room,electronics,1,"OLED TV, 65""",000-004,"Wall mounted, ""Living room"" TV",true,LG65-9911,OLED65C3,LG,,Costco,1899.99,2023-11-24,false,,,,,,,Awad Family Trust,1500.00,owned,,,,,,

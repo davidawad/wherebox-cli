@@ -1,0 +1,12 @@
+# wherebox kind preset `beverage`. Override it by copying this file to
+# <config dir>/presets/kinds/beverage.toml (see docs/presets.md).
+name = "beverage"
+description = "Non-alcoholic drinks: juice, soda, coffee, tea"
+category = "food"
+tracks = ["best_by"]
+notes = "FoodKeeper gives no single figure for drinks; enter the package date."
+
+[[sources]]
+covers = "notes"
+cite = "USDA FSIS FoodKeeper data, version 128 (2018): Soda (#407): no time given; Juice boxes (#405): package use-by date; Coffee, whole beans (#400): pantry 3-5 months"
+url = "https://catalog.data.gov/dataset/fsis-foodkeeper-data"

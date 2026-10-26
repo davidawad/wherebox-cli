@@ -1,0 +1,15 @@
+# fsqlite 0.4.x (checked up to 0.4.9, the latest release) enables unstable
+# features on some targets, so those need a nightly toolchain:
+#   x86_64 (Linux, macOS, Windows): fsqlite-pager and fsqlite-btree use
+#     `#![cfg_attr(target_arch = "x86_64", feature(core_intrinsics))]` for
+#     `core::intrinsics::prefetch_read_data` (L1 prefetch hints);
+#   Windows: fsqlite-vfs uses `#![cfg_attr(windows, feature(windows_by_handle))]`
+#     (file identity for locking).
+# No fsqlite feature flag turns these off. aarch64 Linux and Apple Silicon
+# macOS build on stable (`cargo +stable build`); rust-toolchain.toml cannot
+# pick a channel per target, so nightly is the default everywhere. CI and the
+# release workflow override it per target. See docs/platforms.md.
+[toolchain]
+channel = "nightly"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

@@ -1,0 +1,15 @@
+# wherebox kind preset `fire-extinguisher`. Override it by copying this file to
+# <config dir>/presets/kinds/fire-extinguisher.toml (see docs/presets.md).
+name = "fire-extinguisher"
+description = "Portable fire extinguishers"
+category = "safety"
+tracks = ["installed_at", "inspection", "service", "expiration"]
+
+[intervals]
+inspect = "1m"
+service = "1y"
+
+[[sources]]
+covers = "inspect, service"
+cite = "NFPA 10, Standard for Portable Fire Extinguishers: inspect at approximately 30-day intervals (7.2), maintenance at intervals not exceeding 1 year (7.3)"
+url = "https://www.nfpa.org/codes-and-standards/nfpa-10-standard-development/10"
