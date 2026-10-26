@@ -39,13 +39,29 @@ fn add_and_lot_add_fill_dates_by_storage() {
     assert_eq!(rows(&v)[0]["expires_at"], "2026-01-04", "fridge: 3 days");
     assert_eq!(rows(&v)[0]["frozen_at"], serde_json::Value::Null);
 
-    e.run(&["add", "Chicken thighs", "--preset", "poultry.raw", "--at", "Rental apartment / Kitchen / Fridge / Freezer drawer"]);
+    e.run(&[
+        "add",
+        "Chicken thighs",
+        "--preset",
+        "poultry.raw",
+        "--at",
+        "Rental apartment / Kitchen / Fridge / Freezer drawer",
+    ]);
     let v = lots(&e, "Chicken thighs");
     assert_eq!(rows(&v)[0]["expires_at"], "2026-10-01", "freezer: 9 months");
     assert_eq!(rows(&v)[0]["frozen_at"], "2026-01-01");
 
     // lot add: the lot's location decides
-    e.run(&["lot", "add", "Ribeye", "2", "--at", "Rental apartment / Garage / Chest Freezer", "--acquired", "2026-01-01"]);
+    e.run(&[
+        "lot",
+        "add",
+        "Ribeye",
+        "2",
+        "--at",
+        "Rental apartment / Garage / Chest Freezer",
+        "--acquired",
+        "2026-01-01",
+    ]);
     let v = lots(&e, "Ribeye");
     let frozen = rows(&v).iter().find(|l| l["frozen_at"] == "2026-01-01").expect("frozen lot");
     assert_eq!(frozen["expires_at"], "2026-05-01", "freezer: 4 months");

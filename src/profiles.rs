@@ -96,13 +96,8 @@ fn get_in(config_path: &Path, name: &str, dir: &Path) -> Result<Profile> {
         .unwrap_or_else(|| dir.join(format!("{name}.db")));
     let source = if conf.is_some() { "config" } else { "found" };
     Ok(Profile {
-        title: conf
-            .as_ref()
-            .and_then(|c| c.title.clone())
-            .unwrap_or_else(|| name.clone()),
-        address: conf
-            .as_ref()
-            .and_then(|c| c.address.clone()),
+        title: conf.as_ref().and_then(|c| c.title.clone()).unwrap_or_else(|| name.clone()),
+        address: conf.as_ref().and_then(|c| c.address.clone()),
         rented: conf.as_ref().and_then(|c| c.rented).unwrap_or(false),
         name,
         db_path,

@@ -54,7 +54,8 @@ fn no_properties_without_config() {
 #[test]
 fn each_property_is_its_own_database() {
     let e = Env::new();
-    let v = run(&e, &["--profile", "lake-house", "profile", "init", "--title", "Lake House", "--address", "1 Shore Rd"]);
+    let v =
+        run(&e, &["--profile", "lake-house", "profile", "init", "--title", "Lake House", "--address", "1 Shore Rd"]);
     assert_eq!(v["data"]["created"], true);
     assert_eq!(v["data"]["encrypted"], true);
     assert!(profile_db(&e, "lake-house").exists());

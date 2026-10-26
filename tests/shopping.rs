@@ -89,7 +89,8 @@ fn all_profiles() {
         rows(&v).iter().map(|r| (r["profile"].as_str().unwrap(), r["item"].as_str().unwrap())).collect();
     assert_eq!(got, [("lake-house", "Dish soap"), ("rental-apt", "Paper towels")]);
     let md = p(&["shopping", "--all-profiles", "--checklist"]);
-    assert!(md.contains("## Lake House\n\n- [ ] Dish soap") && md.contains("## Rental apartment"), "{md}");
-    let out = e.cmd().env_remove("WHEREBOX_DB").args(["-P", "rental-apt", "shopping", "--all-profiles"]).output().unwrap();
+    assert!(md.contains("## lake-house\n\n- [ ] Dish soap") && md.contains("## rental-apt"), "{md}");
+    let out =
+        e.cmd().env_remove("WHEREBOX_DB").args(["-P", "rental-apt", "shopping", "--all-profiles"]).output().unwrap();
     assert_eq!(out.status.code(), Some(2), "--profile and --all-profiles conflict");
 }
