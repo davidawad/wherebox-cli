@@ -4,4 +4,4 @@ name = "battery"
 description = "Batteries (spares)"
 category = "consumable"
 tracks = ["expiration"]
-notes = "Enter the printed expiration date (--expires)."
+notes = "Non-perishable: never expires in wherebox (docs/SPEC.md, Shelf life); lots are presumed used up after the reorder cadence and restocked through par levels and `wherebox shopping`. Keep a printed expiration on record as a custom field (--field Expiration=YYYY-MM-DD)."

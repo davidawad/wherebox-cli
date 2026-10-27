@@ -513,6 +513,10 @@ struct Applier<'a> {
     totals: Totals,
     /// (item id, parent spec) resolved after every row is in.
     parents: Vec<(String, Option<String>, usize)>,
+    /// Shelf-life types: only perishables keep a printed best-by.
+    types: crate::shelf_life::Types,
+    /// Items whose best-by dates were dropped (not perishable).
+    not_perishable: Vec<String>,
 }
 
 /// Everything about an item that an import can change, for "unchanged" detection.
@@ -782,7 +786,7 @@ impl Applier<'_> {
             qty: l.qty,
             acquired_at: day(&l.acquired_at)?,
             opened_at,
-            expires_at: day(&l.expires_at)?,
+            // `Expires` is computed (exported for Homebox only), never read back.
             best_by: day(&l.best_by)?,
             frozen_at: day(&l.frozen_at)?,
             location_id,
@@ -790,7 +794,25 @@ impl Applier<'_> {
             created_at: existing.as_ref().map_or_else(crate::util::now_iso, |e| e.created_at.clone()),
             unit_price: l.unit_price.as_deref().map(crate::util::parse_money).transpose()?,
             source_ref: l.source_ref.clone(),
+            confirmed_at: existing.as_ref().and_then(|e| e.confirmed_at.clone()),
         };
+        if lot.best_by.is_some() {
+            let fields = store::item_fields(self.db, &item.id)?;
+            let labels = store::item_labels(self.db, &item.id)?;
+            let facts = crate::shelf_life::ItemFacts {
+                item,
+                fields: &fields,
+                labels: &labels,
+                has_lots: true,
+                food_place: false,
+            };
+            if self.types.classify(&facts, self.catalog).is_none() {
+                lot.best_by = None;
+                if !self.not_perishable.contains(&item.name) {
+                    self.not_perishable.push(item.name.clone());
+                }
+            }
+        }
         // A purchase row only says what was bought when: what has been used
         // since (quantity, status, dates) is the database's.
         if let (Some(e), None, Some(_)) = (&existing, &l.id, &l.source_ref) {
@@ -1071,6 +1093,8 @@ pub fn run(ctx: &Ctx, a: ImportArgs) -> Result<()> {
         extra_labels: a.labels.clone(),
         totals: Totals::default(),
         parents: Vec::new(),
+        types: crate::shelf_life::Types::load(&ctx.resolved.config_path, &catalog)?,
+        not_perishable: Vec::new(),
     };
     db.begin()?;
     let result = (|| -> Result<Vec<String>> {
@@ -1080,7 +1104,13 @@ pub fn run(ctx: &Ctx, a: ImportArgs) -> Result<()> {
                 Err(e) => fail(g[0].line, e.message, &mut plan)?,
             }
         }
-        let warnings = ap.link_parents()?;
+        let mut warnings = ap.link_parents()?;
+        if !ap.not_perishable.is_empty() {
+            warnings.push(format!(
+                "best-by dates dropped: not perishable (no shelf-life type): {}",
+                ap.not_perishable.join(", ")
+            ));
+        }
         if !a.dry_run {
             store::record_batch(&db, &batch, &a.file.to_string_lossy(), format_name(fmt), rows.len())?;
         }

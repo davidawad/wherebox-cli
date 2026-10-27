@@ -79,6 +79,7 @@ replay << 'EOF'
 - wherebox eat Milk 1.5
 - wherebox expiring --within 14d
 - wherebox add Ribeye --preset meat.raw --at "Lake House / Kitchen / Fridge"
+- wherebox shelf-life show milk --columns name,group,fridge,freezer,opened,origin,items
 - wherebox par Milk 2
 - wherebox shopping --checklist
 - wherebox report warranties --expiring 1y --columns warranty_expires,days_left,name,location

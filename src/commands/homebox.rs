@@ -142,7 +142,7 @@ pub fn export_rows(items: &[Item], lk: &Lookups, lots: &[Lot], all: &[Item]) -> 
                 Some(fmt_qty(l.qty)),
                 l.acquired_at.clone(),
                 l.opened_at.clone(),
-                l.expires_at.clone(),
+                lk.est.lot(l).and_then(|v| v.expiry.as_ref()).map(|e| e.date.to_string()),
                 l.best_by.clone(),
                 l.frozen_at.clone(),
                 Some(l.status.clone()),

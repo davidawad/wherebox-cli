@@ -45,11 +45,11 @@ $ wherebox add "Pressure Washer" --at Garage --price 329 --bought 2023-04-12 \
 added 000-007 Pressure Washer at Lake House / Garage
 
 $ wherebox ls --label tools
-ASSET_ID  NAME             QUANTITY  LOCATION                       STATUS  VALUE   LABELS
-────────  ───────────────  ────────  ─────────────────────────────  ──────  ──────  ─────────────
-000-007   Pressure Washer         1  Lake House / Garage            owned   329.00  outdoor,tools
-000-002   Rolling Toolbox         1  Lake House / Garage            owned    89.00  tools
-000-001   Cordless Drill          1  Lake House / Garage / Shelf 2  owned   149.99  power,tools
+ASSET_ID  NAME             ON_HAND  LOCATION                       STATUS  VALUE   LABELS
+────────  ───────────────  ───────  ─────────────────────────────  ──────  ──────  ─────────────
+000-007   Pressure Washer        1  Lake House / Garage            owned   329.00  outdoor,tools
+000-002   Rolling Toolbox        1  Lake House / Garage            owned    89.00  tools
+000-001   Cordless Drill         1  Lake House / Garage / Shelf 2  owned   149.99  power,tools
 
 $ wherebox mv "Pressure Washer" --to "Lake House / Workshop"
 created location Lake House / Workshop
@@ -77,9 +77,12 @@ ASSET_ID  NAME          WARRANTY_EXPIRES
 $ sh examples/pantry.sh
 created location Lake House / Kitchen / Fridge
 added 000-008 Milk at Lake House / Kitchen / Fridge
-added a lot of Milk (1 l, due 2026-01-09)
+expires 2026-01-04 (milk: 7 days in the fridge from purchase on 2025-12-28; see `wherebox shelf-life ls`)
+added a lot of Milk (1 l, expires 2026-01-07)
+milk: 7 days in the fridge from purchase on 2025-12-31
 created location Lake House / Garage / Freezer
 added 000-009 Chicken Thighs at Lake House / Garage / Freezer
+expires 2026-08-15 (raw-poultry: 9 months in the freezer from freezing on 2025-11-15; see `wherebox shelf-life ls`)
 created location Lake House / Kitchen / Pantry
 added 000-010 Sourdough at Lake House / Kitchen / Pantry
 added 000-011 Paper Towels at Lake House / Kitchen / Pantry
@@ -88,15 +91,24 @@ $ wherebox eat Milk 1.5
 eaten 1.5 l of Milk (1.5 l left)
 
 $ wherebox expiring --within 14d
-DUE         DAYS_LEFT  STATE    ITEM       QTY   UNIT  LOCATION                       FROZEN_AT
-──────────  ─────────  ───────  ─────────  ────  ────  ─────────────────────────────  ─────────
-2025-12-31         -1  expired  Sourdough  1.00  ea    Lake House / Kitchen / Pantry
-2026-01-04          3  soon     Milk       0.50  l     Lake House / Kitchen / Fridge
-2026-01-09          8  soon     Milk       1.00  l     Lake House / Kitchen / Fridge
+DUE         DAYS_LEFT  STATE    ITEM       QTY   UNIT  LOCATION                       EXPIRY_BASIS
+──────────  ─────────  ───────  ─────────  ────  ────  ─────────────────────────────  ────────────
+2025-12-31         -1  expired  Sourdough  1.00  ea    Lake House / Kitchen / Pantry  best_by
+2026-01-04          3  soon     Milk       0.50  l     Lake House / Kitchen / Fridge  shelf_life
+2026-01-07          6  soon     Milk       1.00  l     Lake House / Kitchen / Fridge  shelf_life
 
 $ wherebox add Ribeye --preset meat.raw --at "Lake House / Kitchen / Fridge"
 added 000-012 Ribeye at Lake House / Kitchen / Fridge
-meat.raw: use by 2026-01-04 (3-5 days in the fridge from purchase on 2026-01-01; see `wherebox preset show meat.raw`)
+expires 2026-01-04 (raw-meat: 3 days in the fridge from purchase on 2026-01-01; see `wherebox shelf-life ls`)
+
+$ wherebox shelf-life show milk --columns name,group,fridge,freezer,opened,origin,items
+name     milk
+group    dairy
+fridge   7 days
+freezer  3 months
+opened   7 days
+origin   built-in
+items    Milk
 
 $ wherebox par Milk 2
 par level of Milk: 2 l
@@ -130,14 +142,27 @@ HB.import_ref,HB.location,HB.label,HB.quantity,HB.name,HB.asset_id,HB.descriptio
   status changes, valuations, attachments, consumption).
 * **Attachments** (photos, receipts, manuals, warranties), content-addressed
   and sealed with the database's keys.
-* **Consumables**: lots with acquired, opened, use-by, best-by and frozen
+* **Consumables**: lots with acquired, opened, frozen and (printed) best-by
   dates and their own place (fridge, freezer, pantry shelf). `use`, `eat` and
   `toss` draw from the oldest lot first; `expiring` lists what to eat or toss.
+* **Computed shelf life**: about 80 shelf-life types (`banana`, `milk`,
+  `raw-poultry`, `bread`...; `wherebox shelf-life ls`) say how long food
+  keeps in the pantry, fridge and freezer and after opening, from USDA FSIS
+  FoodKeeper and the FoodSafety.gov cold storage chart. An item gets its
+  type by name (`Organic Bananas` is `banana`; `Chili Garlic Sauce` is not
+  `garlic`), its preset or `--shelf-life`; expiry is computed from where the
+  lot is kept now (moving it to the freezer re-bases it), never stored.
+  Dry and canned goods, supplies and durables never expire. Override or add
+  types with `shelf-life set` (`[shelf_life.<type>]` in config.toml).
+* **Estimated on hand**: years of repeat purchases don't pile up. A lot is
+  presumed used up once past its expiry, or (non-perishables) once older
+  than the item's reorder cadence; logs and `lot confirm` win. Estimates
+  show as `~6` in `ls`, `show`, `list check` and `shopping`.
 * **Kind presets** (`--preset meat.raw`, `wherebox preset ls`): what a kind
-  of item tracks and its defaults. Food presets date new lots from USDA FSIS
-  FoodKeeper shelf lives (fridge or freezer, by the location's name); safety
-  presets set service dates (smoke alarms: replace after 10 years, per
-  NFPA). Every default cites its source; see [docs/presets.md](docs/presets.md).
+  of item tracks and its defaults. Food presets name a default shelf-life
+  type; safety presets set service dates (smoke alarms: replace after 10
+  years, per NFPA). Every default cites its source; see
+  [docs/presets.md](docs/presets.md).
 * **Shopping list**: items below their par level, par items about to expire,
   and learned reorders (the median gap between purchases, or a `Recurring`
   field) with the last purchase, cadence and days overdue, as a table, a
@@ -230,11 +255,13 @@ wherebox show drill                         # all fields, lots, attachments, his
 wherebox history drill
 wherebox loc ls                             # the tree with counts and value
 
-wherebox add Milk --at "Kitchen / Fridge" --unit l --lot-qty 2 --expires 2026-01-09
-wherebox lot add Milk 1 --expires 2026-01-14
+wherebox add Milk --at "Kitchen / Fridge" --unit l --lot-qty 2   # expires in 7 days (shelf-life type milk)
+wherebox lot add Milk 1 --best-by 2026-01-14                      # a printed date wins
 wherebox eat Milk 1.5                       # oldest lot first
 wherebox toss Milk --spoiled                # the whole oldest lot
-wherebox expiring --within 3d
+wherebox expiring --within 3d               # perishables only
+wherebox lot confirm "Paper Towels" --qty 4 # what is really there today
+wherebox shelf-life set kombucha --fridge 30d --synonym booch
 
 wherebox export -o lake-house.csv             # Homebox CSV
 wherebox import lake-house.csv --dry-run      # what would change
@@ -453,7 +480,7 @@ data cannot be recovered.
 
 | command | purpose |
 |---------|---------|
-| `add NAME` | add an item (`--at`, `--qty`, `--price`, `--bought`, `--from`, `--serial`, `--model`, `--maker`, `--owner`, `--label`, `--field NAME=VALUE`, `--source`, `--inside`, lot dates …) |
+| `add NAME` | add an item (`--at`, `--qty`, `--price`, `--bought`, `--from`, `--serial`, `--model`, `--maker`, `--owner`, `--label`, `--field NAME=VALUE`, `--source`, `--inside`, `--shelf-life`, lot dates …) |
 | `edit ITEM` | change fields (`--clear FIELD`, `--label`/`--unlabel`, `--at`, `--inside`/`--not-inside`) |
 | `mv ITEM... --to LOC` | move items |
 | `rm ITEM [--as disposed\|sold\|gifted\|lost]` | mark an item gone; `--purge` deletes it |
@@ -466,9 +493,11 @@ data cannot be recovered.
 | `label add\|ls\|rm` | labels |
 | `attach ITEM FILE [--kind]` | attach a photo, receipt, manual or warranty |
 | `attachment ls\|get\|rm` | list, extract (decrypted) or remove attachments |
-| `lot add\|ls\|edit\|rm` | lots of a consumable |
+| `lot add\|ls\|edit\|rm` | lots of a consumable (`--best-by` for a printed date, perishables only) |
+| `lot confirm ITEM [--qty N]` | assert what is on hand today (resets the presumption that old lots are used up) |
 | `use`, `eat`, `toss ITEM [QTY]` | log consumption, oldest lot first |
-| `expiring [--within 3d]` | lots due soon or past due (a preset's alert lead time widens the default window) |
+| `expiring [--within 3d]` | perishable lots by computed expiry, soon or just past |
+| `shelf-life ls\|show\|set\|unset` | shelf-life types: pantry, fridge, freezer and after-opening figures |
 | `preset ls\|show NAME` | kind presets: what they track, defaults, alerts, sources |
 | `par ITEM N [--reorder Q]` | keep at least N on hand (`none` clears it) |
 | `shopping [--all-profiles] [--within 7d] [--since 18] [--checklist] [--include-list L]` | what to buy: below par, expiring par items, learned reorders, list shortfalls |
@@ -531,8 +560,11 @@ wherebox config keys
 
 The config file is flat TOML; one level of tables is flattened (`[csv]
 delimiter = ";"` is `csv_delimiter = ";"`). `[profiles.NAME]` tables describe
-properties and `[encryption]` is wherebox's record of database keys. See
-[`examples/config.toml`](examples/config.toml).
+properties, `[shelf_life.TYPE]` tables override or add shelf-life types
+(`fridge = "5d"`, `synonyms = [...]`), `[reorder_cadence]` gives fallback
+cadences for presuming non-perishables used up (`default = "90d"`, or by
+preset name or category), and `[encryption]` is wherebox's record of
+database keys. See [`examples/config.toml`](examples/config.toml).
 
 ## Machine interface
 
@@ -553,13 +585,14 @@ SQLite schema, managed by versioned migrations in `src/migrations.rs`:
 * `items`: id (ULID), import ref, asset id, every Homebox field, owner entity,
   replacement value, status, consumable fields (unit, par level, reorder qty,
   vendor, product ref, kind preset); money in cents, dates `YYYY-MM-DD`
-* `locations(id, name, parent_id, kind property|room|container|shelf, address)`
+* `locations(id, name, parent_id, kind property|room|container|shelf|fridge|freezer|pantry, address)`
 * `labels`, `item_labels`; `item_fields(item_id, name, value)`
 * `attachments(item_id, kind, path, sha256, primary, …)`;
   `sources(item_id, source, ref)`
 * `events(item_id, at, kind, detail)`: append-only history
-* `lots(id, item_id, qty, acquired_at, opened_at, expires_at, best_by,
-  frozen_at, location_id, status sealed|open|consumed|discarded)` and
+* `lots(id, item_id, qty, acquired_at, opened_at, best_by (printed),
+  frozen_at, confirmed_at, location_id, status sealed|open|consumed|discarded)`
+  (expiry is computed, never stored) and
   `consumption(lot_id, qty, at, reason eaten|used|spoiled|discarded)`
 * `import_batches`
 

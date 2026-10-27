@@ -3,15 +3,6 @@
 name = "poultry.raw"
 description = "Raw chicken, turkey and other poultry, whole or in parts"
 category = "food"
-tracks = ["use_by", "frozen_at"]
+tracks = ["shelf_life", "frozen_at"]
+shelf_life = "raw-poultry"
 notes = "Freezer life: parts 9 months, whole birds 12 months; the shorter applies by default. Ground poultry: 1-2 days, 3-4 months (FoodKeeper #115)."
-
-[shelf_life]
-date = "use_by"
-fridge = "1-2d"
-freezer = "9-12m"
-
-[[sources]]
-covers = "fridge, freezer"
-cite = "USDA FSIS FoodKeeper data, version 128 (2018): Chicken, whole (#113) and Turkey, whole (#114): refrigerate 1-2 days, freeze 12 months; Chicken parts (#116-118) and Turkey parts (#119-121): freeze 9 months"
-url = "https://catalog.data.gov/dataset/fsis-foodkeeper-data"

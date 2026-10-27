@@ -27,11 +27,11 @@ fn eggs() -> Env {
         "6",
         "--acquired",
         "2025-12-20",
-        "--expires",
+        "--best-by",
         "2026-01-20",
     ]);
-    e.run(&["lot", "add", "Eggs", "12", "--acquired", "2025-12-30", "--expires", "2026-02-01"]);
-    e.run(&["lot", "add", "Eggs", "12", "--acquired", "2025-12-25", "--expires", "2026-01-25"]);
+    e.run(&["lot", "add", "Eggs", "12", "--acquired", "2025-12-30", "--best-by", "2026-02-01"]);
+    e.run(&["lot", "add", "Eggs", "12", "--acquired", "2025-12-25", "--best-by", "2026-01-25"]);
     e
 }
 
@@ -110,13 +110,20 @@ fn items_without_lots_count_down() {
 }
 
 #[test]
-fn expiring_lists_due_lots_freezer_included() {
+fn expiring_lists_perishables_by_computed_expiry_freezer_included() {
     // "today" is 2026-01-01 (pinned).
     let e = Env::pinned();
-    e.run(&["add", "Yogurt", "--at", "Home / Kitchen / Fridge", "--lot-qty", "4", "--expires", "2026-01-03"]);
+    // yogurt: 1 week in the fridge from today
+    e.run(&["add", "Yogurt", "--at", "Home / Kitchen / Fridge", "--lot-qty", "4"]);
+    // printed best-by dates win
     e.run(&["add", "Bread", "--at", "Home / Kitchen / Pantry", "--best-by", "2025-12-30"]);
     e.run(&["add", "Salmon", "--at", "Home / Garage / Freezer", "--frozen", "2025-12-01", "--best-by", "2026-01-06"]);
-    e.run(&["add", "Rice", "--at", "Pantry", "--best-by", "2027-01-01"]);
+    // long expired: presumed used up, off the list
+    e.run(&["add", "Ribeye", "--at", "Home / Kitchen / Fridge", "--acquired", "2025-12-01"]);
+    // non-perishables never expire, and cannot be given a date
+    let err = e.fail(&["add", "Rice", "--at", "Pantry", "--best-by", "2027-01-01"], 4);
+    assert!(err.contains("not perishable"), "{err}");
+    e.run(&["add", "Rice", "--at", "Pantry", "--lot"]);
     e.run(&["add", "Hammer", "--at", "Garage"]);
     let v = e.json(&["expiring"]);
     let got: Vec<(String, i64, String)> = rows(&v)
@@ -129,19 +136,52 @@ fn expiring_lists_due_lots_freezer_included() {
         got,
         [
             ("Bread".into(), -2, "expired".into()),
-            ("Yogurt".into(), 2, "soon".into()),
-            ("Salmon".into(), 5, "soon".into())
+            ("Salmon".into(), 5, "soon".into()),
+            ("Yogurt".into(), 7, "soon".into())
         ]
     );
-    assert_eq!(rows(&v)[2]["frozen_at"], "2025-12-01");
-    assert_eq!(rows(&v)[2]["location"], "Home / Garage / Freezer");
-    assert_eq!(e.json(&["expiring", "--within", "3d"])["count"], 2);
+    assert_eq!(rows(&v)[0]["expiry_basis"], "best_by");
+    assert_eq!(rows(&v)[2]["expiry_basis"], "shelf_life");
+    assert_eq!(rows(&v)[2]["shelf_life"], "yogurt");
+    assert_eq!(rows(&v)[1]["frozen_at"], "2025-12-01");
+    assert_eq!(rows(&v)[1]["location"], "Home / Garage / Freezer");
+    assert_eq!(e.json(&["expiring", "--within", "3d"])["count"], 1);
     assert_eq!(e.json(&["expiring", "--at", "Fridge"])["count"], 1);
     // `--at Pantry` found the existing Home / Kitchen / Pantry.
     assert_eq!(e.json(&["show", "Rice"])["data"]["location"], "Home / Kitchen / Pantry");
+    assert_eq!(e.json(&["show", "Rice"])["data"]["expires_at"], serde_json::Value::Null);
     // Eaten lots drop off the list.
     e.run(&["eat", "Yogurt", "4"]);
     assert_eq!(e.json(&["expiring"])["count"], 2);
+    // there is no --expires any more
+    e.fail(&["lot", "add", "Rice", "1", "--expires", "2026-02-01"], 2);
+}
+
+#[test]
+fn moving_into_the_freezer_rebases_the_expiry() {
+    let e = Env::pinned(); // 2026-01-01
+    e.run(&["add", "Chicken Thighs", "--at", "Home / Kitchen / Fridge", "--acquired", "2025-12-31"]);
+    let l = &lots(&e, "Chicken Thighs")[0];
+    assert_eq!(l["expires_at"], "2026-01-01", "raw poultry: 1 day in the fridge");
+    assert_eq!(l["storage"], "fridge");
+    let id = l["id"].as_str().unwrap().to_string();
+    e.run(&["lot", "edit", &id, "--at", "Home / Kitchen / Freezer"]);
+    let l = &lots(&e, "Chicken Thighs")[0];
+    assert_eq!(l["frozen_at"], "2026-01-01", "frozen today");
+    assert_eq!(l["expires_at"], "2026-10-01", "9 months from freezing");
+    // out of the freezer: the fridge figure from purchase again
+    e.run(&["lot", "edit", &id, "--at", "Home / Kitchen / Fridge"]);
+    assert_eq!(lots(&e, "Chicken Thighs")[0]["expires_at"], "2026-01-01");
+    // re-freezing on a later day re-bases the clock
+    let later = Env { epoch: Some("1769904000".into()), ..e }; // 2026-02-01
+    later.run(&["lot", "edit", &id, "--at", "Home / Kitchen / Freezer"]);
+    let l = &lots(&later, "Chicken Thighs")[0];
+    assert_eq!((l["frozen_at"].as_str(), l["expires_at"].as_str()), (Some("2026-02-01"), Some("2026-11-01")));
+    // moving the item moves the lots that live with it
+    later.run(&["add", "Ground Beef", "--at", "Home / Kitchen / Fridge"]);
+    later.run(&["mv", "Ground Beef", "--to", "Home / Kitchen / Freezer"]);
+    let l = &lots(&later, "Ground Beef")[0];
+    assert_eq!((l["frozen_at"].as_str(), l["expires_at"].as_str()), (Some("2026-02-01"), Some("2026-05-01")));
 }
 
 #[test]

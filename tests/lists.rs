@@ -118,11 +118,13 @@ fn nutty_pudding_is_not_ready_then_ready() {
     assert_eq!(walnuts["matches"][0]["tier"], "name");
     assert_eq!(walnuts["matches"][0]["basis"], "size from name");
     assert!((walnuts["have"].as_f64().unwrap() - 453.592).abs() < 0.01, "16 oz in g: {walnuts}");
+    // past its best-by: presumed used up
     let milk = row(&v, "entry", "milk");
-    assert!((milk["expired"].as_f64().unwrap() - 1.9).abs() < 1e-9, "{milk}");
-    assert!(milk["status"].as_str().unwrap().contains("expired"), "{milk}");
+    assert!((milk["used_up"].as_f64().unwrap() - 1.9).abs() < 1e-9, "{milk}");
+    assert_eq!(milk["on_hand_basis"], "estimated");
+    assert!(milk["status"].as_str().unwrap().contains("presumed used up"), "{milk}");
     let eggs = row(&v, "entry", "eggs");
-    assert_eq!((eggs["have"].as_f64(), eggs["expired"].as_f64()), (Some(12.0), Some(6.0)), "the old lot doesn't count");
+    assert_eq!((eggs["have"].as_f64(), eggs["used_up"].as_f64()), (Some(12.0), Some(6.0)), "the old lot doesn't count");
     let mold = row(&v, "entry", "mold");
     assert_eq!(
         (mold["matches"][0]["tier"].as_str(), mold["matches"][0]["score"].as_f64()),

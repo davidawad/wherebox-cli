@@ -3,14 +3,5 @@
 name = "meat.ground"
 description = "Raw ground meat: beef, veal, lamb, pork"
 category = "food"
-tracks = ["use_by", "frozen_at"]
-
-[shelf_life]
-date = "use_by"
-fridge = "1-2d"
-freezer = "3-4m"
-
-[[sources]]
-covers = "fridge, freezer"
-cite = "USDA FSIS FoodKeeper data, version 128 (2018): Beef, ground (#43); Lamb, ground (#50); Veal, ground (#59); Pork, ground (#73): refrigerate 1-2 days, freeze 3-4 months"
-url = "https://catalog.data.gov/dataset/fsis-foodkeeper-data"
+tracks = ["shelf_life", "frozen_at"]
+shelf_life = "ground-meat"

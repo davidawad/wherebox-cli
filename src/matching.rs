@@ -436,6 +436,188 @@ pub fn ambiguous<K>(ranked: &[Ranked<K>]) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Head nouns
+// ---------------------------------------------------------------------------
+
+/// Words that describe a product without naming it: skipped when looking for
+/// the head noun (the last word that does name it).
+const MODIFIERS: &[&str] = &[
+    "organic",
+    "whole",
+    "raw",
+    "frozen",
+    "wild",
+    "baby",
+    "mini",
+    "ripe",
+    "salted",
+    "unsalted",
+    "plain",
+    "sweetened",
+    "unsweetened",
+    "boneless",
+    "skinless",
+    "grass",
+    "fed",
+    "pasture",
+    "raised",
+    "free",
+    "range",
+    "cage",
+    "lean",
+    "local",
+    "imported",
+    "seedless",
+    "peeled",
+    "hulled",
+    "shelled",
+    "cleaned",
+    "trimmed",
+    "washed",
+    "dried",
+    "usda",
+    "non",
+    "gmo",
+    "certified",
+    "kosher",
+    "vegan",
+    "gluten",
+    "conventional",
+    "assorted",
+    "mixed",
+    "variety",
+];
+
+/// Containers and portions: skipped when looking for the head noun
+/// (`Garlic, 1 Head`, `Bananas 3 lb Bag`).
+const PACKAGING: &[&str] = &[
+    "bag",
+    "box",
+    "bunch",
+    "head",
+    "bulb",
+    "jar",
+    "can",
+    "bottle",
+    "carton",
+    "container",
+    "pouch",
+    "tub",
+    "tray",
+    "case",
+    "package",
+    "pkg",
+    "sleeve",
+    "loaf",
+    "clamshell",
+    "net",
+    "sack",
+    "crate",
+    "dozen",
+    "pint",
+    "ea",
+    "each",
+    "unit",
+    "serving",
+    "servings",
+];
+
+/// Words that end the part of a product name that says what it is
+/// (`Tuna in Water`, `Tortillas with Flax`, `Snacks for Kids`).
+const SEGMENT_WORDS: &[&str] = &["in", "with", "for", "from", "by", "w"];
+
+/// One part of a product name (split at commas, parentheses, dashes and
+/// `in`/`with`/`for`...): its tokens and its head noun.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Segment {
+    pub tokens: Vec<String>,
+    /// Tokens that name the product (modifiers and packaging dropped).
+    pub core: Vec<String>,
+    pub head: Option<String>,
+}
+
+/// The segments of a product name, for head-noun matching.
+pub fn segments(name: &str) -> Vec<Segment> {
+    let lower = name.to_lowercase().replace(" - ", ",").replace(" – ", ",");
+    let mut parts: Vec<String> = Vec::new();
+    for chunk in lower.split([',', ';', ':', '|', '(', ')', '[', ']', '/', '+']) {
+        let mut cur = String::new();
+        for w in chunk.split_whitespace() {
+            let bare = w.trim_matches(|c: char| !c.is_alphanumeric());
+            if SEGMENT_WORDS.contains(&bare) && !cur.trim().is_empty() {
+                parts.push(std::mem::take(&mut cur));
+                continue;
+            }
+            cur.push(' ');
+            cur.push_str(w);
+        }
+        parts.push(cur);
+    }
+    parts
+        .iter()
+        .map(|p| {
+            let tokens = name_tokens(p);
+            let core: Vec<String> = tokens
+                .iter()
+                .filter(|t| !MODIFIERS.contains(&t.as_str()) && !PACKAGING.contains(&t.as_str()))
+                .cloned()
+                .collect();
+            let head = core.last().cloned();
+            Segment { tokens, core, head }
+        })
+        .filter(|s| !s.tokens.is_empty())
+        .collect()
+}
+
+fn same_word(a: &str, b: &str) -> bool {
+    a == b || strsim::jaro_winkler(a, b) >= TOKEN_SIM
+}
+
+/// The head noun of a phrase (`chicken breasts` -> `breast`).
+pub fn phrase_head(tokens: &[String]) -> Option<&String> {
+    tokens.iter().rev().find(|t| !MODIFIERS.contains(&t.as_str()) && !PACKAGING.contains(&t.as_str()))
+}
+
+/// How a phrase (a shelf-life type, a recipe entry) names a product.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HeadMatch {
+    /// 0.85-1.0 when the phrase's head noun is the head noun of a segment of
+    /// the name (and its other words are in that segment, more of the
+    /// segment named scoring higher); 0.6 when only the head noun is; 0.5
+    /// when it only appears as a modifier (`garlic` in `Chili Garlic
+    /// Sauce`); else 0.
+    pub score: f64,
+    /// The head noun is there, but not as the head: a compound product.
+    pub compound: bool,
+}
+
+/// Score `phrase` (normalized tokens) against a product name's segments.
+pub fn head_match(phrase: &[String], segs: &[Segment]) -> HeadMatch {
+    let none = HeadMatch { score: 0.0, compound: false };
+    let Some(ph) = phrase_head(phrase) else { return none };
+    let mut best = none;
+    for s in segs {
+        let others = phrase.iter().filter(|t| *t != ph);
+        let all_there = others.clone().all(|t| s.tokens.iter().any(|x| same_word(t, x)));
+        let is_head = s.head.as_deref().is_some_and(|h| same_word(h, ph));
+        if is_head && all_there {
+            let named = phrase.iter().filter(|t| s.core.iter().any(|x| same_word(t, x))).count();
+            let cover = named as f64 / s.core.len().max(1) as f64;
+            let score = ((0.85 + 0.15 * cover.min(1.0)) * 1e4).round() / 1e4;
+            if score > best.score {
+                best = HeadMatch { score, compound: false };
+            }
+        } else if is_head && best.score < 0.6 {
+            // the head noun, but not every other word of the phrase
+            best = HeadMatch { score: 0.6, compound: false };
+        } else if s.tokens.iter().any(|x| same_word(x, ph)) && best.score < 0.5 {
+            best = HeadMatch { score: 0.5, compound: true };
+        }
+    }
+    best
+}
+
+// ---------------------------------------------------------------------------
 // Units
 // ---------------------------------------------------------------------------
 

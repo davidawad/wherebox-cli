@@ -17,11 +17,11 @@ $ wherebox add "Pressure Washer" --at Garage --price 329 --bought 2023-04-12 \
 added 000-007 Pressure Washer at Lake House / Garage
 
 $ wherebox ls --label tools
-ASSET_ID  NAME             QUANTITY  LOCATION                       STATUS  VALUE   LABELS
-────────  ───────────────  ────────  ─────────────────────────────  ──────  ──────  ─────────────
-000-007   Pressure Washer         1  Lake House / Garage            owned   329.00  outdoor,tools
-000-002   Rolling Toolbox         1  Lake House / Garage            owned    89.00  tools
-000-001   Cordless Drill          1  Lake House / Garage / Shelf 2  owned   149.99  power,tools
+ASSET_ID  NAME             ON_HAND  LOCATION                       STATUS  VALUE   LABELS
+────────  ───────────────  ───────  ─────────────────────────────  ──────  ──────  ─────────────
+000-007   Pressure Washer        1  Lake House / Garage            owned   329.00  outdoor,tools
+000-002   Rolling Toolbox        1  Lake House / Garage            owned    89.00  tools
+000-001   Cordless Drill         1  Lake House / Garage / Shelf 2  owned   149.99  power,tools
 
 $ wherebox mv "Pressure Washer" --to "Lake House / Workshop"
 created location Lake House / Workshop
@@ -49,9 +49,12 @@ ASSET_ID  NAME          WARRANTY_EXPIRES
 $ sh examples/pantry.sh
 created location Lake House / Kitchen / Fridge
 added 000-008 Milk at Lake House / Kitchen / Fridge
-added a lot of Milk (1 l, due 2026-01-09)
+expires 2026-01-04 (milk: 7 days in the fridge from purchase on 2025-12-28; see `wherebox shelf-life ls`)
+added a lot of Milk (1 l, expires 2026-01-07)
+milk: 7 days in the fridge from purchase on 2025-12-31
 created location Lake House / Garage / Freezer
 added 000-009 Chicken Thighs at Lake House / Garage / Freezer
+expires 2026-08-15 (raw-poultry: 9 months in the freezer from freezing on 2025-11-15; see `wherebox shelf-life ls`)
 created location Lake House / Kitchen / Pantry
 added 000-010 Sourdough at Lake House / Kitchen / Pantry
 added 000-011 Paper Towels at Lake House / Kitchen / Pantry
@@ -60,15 +63,24 @@ $ wherebox eat Milk 1.5
 eaten 1.5 l of Milk (1.5 l left)
 
 $ wherebox expiring --within 14d
-DUE         DAYS_LEFT  STATE    ITEM       QTY   UNIT  LOCATION                       FROZEN_AT
-──────────  ─────────  ───────  ─────────  ────  ────  ─────────────────────────────  ─────────
-2025-12-31         -1  expired  Sourdough  1.00  ea    Lake House / Kitchen / Pantry
-2026-01-04          3  soon     Milk       0.50  l     Lake House / Kitchen / Fridge
-2026-01-09          8  soon     Milk       1.00  l     Lake House / Kitchen / Fridge
+DUE         DAYS_LEFT  STATE    ITEM       QTY   UNIT  LOCATION                       EXPIRY_BASIS
+──────────  ─────────  ───────  ─────────  ────  ────  ─────────────────────────────  ────────────
+2025-12-31         -1  expired  Sourdough  1.00  ea    Lake House / Kitchen / Pantry  best_by
+2026-01-04          3  soon     Milk       0.50  l     Lake House / Kitchen / Fridge  shelf_life
+2026-01-07          6  soon     Milk       1.00  l     Lake House / Kitchen / Fridge  shelf_life
 
 $ wherebox add Ribeye --preset meat.raw --at "Lake House / Kitchen / Fridge"
 added 000-012 Ribeye at Lake House / Kitchen / Fridge
-meat.raw: use by 2026-01-04 (3-5 days in the fridge from purchase on 2026-01-01; see `wherebox preset show meat.raw`)
+expires 2026-01-04 (raw-meat: 3 days in the fridge from purchase on 2026-01-01; see `wherebox shelf-life ls`)
+
+$ wherebox shelf-life show milk --columns name,group,fridge,freezer,opened,origin,items
+name     milk
+group    dairy
+fridge   7 days
+freezer  3 months
+opened   7 days
+origin   built-in
+items    Milk
 
 $ wherebox par Milk 2
 par level of Milk: 2 l

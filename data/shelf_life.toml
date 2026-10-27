@@ -1,0 +1,576 @@
+# Built-in shelf-life types (docs/SPEC.md, "Shelf life and on hand").
+#
+# One table per type. Keys:
+#   group     fruit, vegetable, herb, dairy, egg, meat, seafood, bakery,
+#             prepared, condiment, other
+#   pantry, fridge, freezer
+#             how long it keeps there (d, w, m, y; a range such as "3-5d"
+#             uses its shorter end). Absent: not recommended there.
+#   opened    how long it keeps after opening, wherever it is kept. Absent:
+#             opening changes nothing.
+#   synonyms  other names an item may carry (matched like the type name:
+#             the phrase's head noun must be the head noun of the item name).
+#
+# Values are the conservative (shorter) end of the cited ranges. Override or
+# extend them with `[shelf_life.<type>]` tables in config.toml, or
+# `wherebox shelf-life set <type> --fridge 7d`.
+#
+# Sources:
+#   [FK]  USDA FSIS FoodKeeper data, version 128 (2018),
+#         https://catalog.data.gov/dataset/fsis-foodkeeper-data
+#   [CSC] FoodSafety.gov / USDA "Cold Food Storage Chart" (the FDA
+#         refrigerator and freezer storage chart),
+#         https://www.foodsafety.gov/food-safety-charts/cold-food-storage-charts
+
+# ---------------------------------------------------------------------------
+# Fruit. [FK] Produce: fresh fruits (pantry until ripe, then refrigerate);
+# freezer figures are for washed, cut or peeled fruit.
+# ---------------------------------------------------------------------------
+
+[apple]
+group = "fruit"
+pantry = "3w"
+fridge = "4w"
+freezer = "8m"
+opened = "3d"
+synonyms = ["fuji apple", "gala apple", "honeycrisp", "granny smith"]
+
+[banana]
+group = "fruit"
+pantry = "5d"
+fridge = "5d"
+freezer = "2m"
+synonyms = ["plantain"]
+
+[berries]
+group = "fruit"
+fridge = "3d"
+freezer = "8m"
+synonyms = ["blueberries", "raspberries", "strawberries", "blackberries", "mixed berries", "cranberries", "boysenberries"]
+
+[cherries]
+group = "fruit"
+fridge = "4d"
+freezer = "8m"
+
+[grapes]
+group = "fruit"
+fridge = "1w"
+freezer = "1m"
+
+[citrus]
+group = "fruit"
+pantry = "10d"
+fridge = "3w"
+freezer = "4m"
+opened = "3d"
+synonyms = ["orange", "lemon", "lime", "grapefruit", "clementine", "mandarin", "tangerine"]
+
+[avocado]
+group = "fruit"
+pantry = "4d"
+fridge = "3d"
+freezer = "4m"
+opened = "1d"
+
+[stone-fruit]
+group = "fruit"
+pantry = "2d"
+fridge = "3d"
+freezer = "8m"
+synonyms = ["peaches", "plums", "nectarines", "apricots"]
+
+[melon]
+group = "fruit"
+pantry = "7d"
+fridge = "1w"
+opened = "3d"
+synonyms = ["watermelon", "cantaloupe", "honeydew"]
+
+[pineapple]
+group = "fruit"
+pantry = "1d"
+fridge = "5d"
+freezer = "4m"
+opened = "3d"
+
+[pear]
+group = "fruit"
+pantry = "4d"
+fridge = "5d"
+freezer = "2m"
+
+[mango]
+group = "fruit"
+pantry = "4d"
+fridge = "5d"
+freezer = "6m"
+opened = "3d"
+synonyms = ["papaya"]
+
+[kiwi]
+group = "fruit"
+pantry = "4d"
+fridge = "2w"
+freezer = "4m"
+
+# ---------------------------------------------------------------------------
+# Vegetables. [FK] Produce: fresh vegetables; freezer figures are for
+# blanched vegetables or the commercial frozen product.
+# ---------------------------------------------------------------------------
+
+[leafy-greens]
+group = "vegetable"
+fridge = "3d"
+freezer = "8m"
+synonyms = ["kale", "chard", "collard greens", "mixed greens", "spring mix", "arugula", "bok choy", "salad greens"]
+
+[lettuce]
+group = "vegetable"
+fridge = "3d"
+synonyms = ["romaine", "iceberg"]
+
+[spinach]
+group = "vegetable"
+fridge = "3d"
+freezer = "8m"
+
+[tomato]
+group = "vegetable"
+pantry = "5d"
+fridge = "2d"
+freezer = "2m"
+synonyms = ["cherry tomatoes", "grape tomatoes"]
+
+[onion]
+group = "vegetable"
+pantry = "2w"
+fridge = "2m"
+freezer = "8m"
+opened = "7d"
+synonyms = ["shallot", "red onion", "yellow onion"]
+
+[scallion]
+group = "vegetable"
+fridge = "5d"
+synonyms = ["green onion", "leek"]
+
+[potato]
+group = "vegetable"
+pantry = "3w"
+fridge = "1w"
+freezer = "10m"
+synonyms = ["russet", "yukon gold"]
+
+[sweet-potato]
+group = "vegetable"
+pantry = "3w"
+freezer = "10m"
+synonyms = ["yam"]
+
+[garlic]
+group = "vegetable"
+pantry = "1m"
+fridge = "1w"
+freezer = "6m"
+
+[ginger]
+group = "vegetable"
+pantry = "1w"
+fridge = "3w"
+freezer = "6m"
+synonyms = ["ginger root"]
+
+[carrot]
+group = "vegetable"
+fridge = "3w"
+freezer = "10m"
+synonyms = ["baby carrots", "parsnip", "beet"]
+
+[celery]
+group = "vegetable"
+fridge = "1w"
+freezer = "10m"
+
+[broccoli]
+group = "vegetable"
+fridge = "3d"
+freezer = "10m"
+synonyms = ["cauliflower", "brussels sprouts"]
+
+[cabbage]
+group = "vegetable"
+fridge = "1w"
+freezer = "10m"
+
+[bell-pepper]
+group = "vegetable"
+fridge = "4d"
+freezer = "6m"
+synonyms = ["jalapeno", "chili pepper", "poblano"]
+
+[cucumber]
+group = "vegetable"
+fridge = "4d"
+
+[zucchini]
+group = "vegetable"
+fridge = "4d"
+freezer = "10m"
+synonyms = ["summer squash", "eggplant"]
+
+[winter-squash]
+group = "vegetable"
+pantry = "1m"
+freezer = "10m"
+synonyms = ["butternut squash", "acorn squash", "pumpkin", "spaghetti squash"]
+
+[mushroom]
+group = "vegetable"
+fridge = "3d"
+freezer = "8m"
+synonyms = ["portobello", "shiitake", "cremini"]
+
+[corn]
+group = "vegetable"
+fridge = "1d"
+freezer = "8m"
+synonyms = ["corn on the cob", "sweet corn"]
+
+[green-beans]
+group = "vegetable"
+fridge = "3d"
+freezer = "8m"
+synonyms = ["string beans", "snap peas", "snow peas"]
+
+[asparagus]
+group = "vegetable"
+fridge = "3d"
+freezer = "5m"
+
+[peas]
+group = "vegetable"
+fridge = "3d"
+freezer = "8m"
+synonyms = ["green peas", "edamame"]
+
+[sprouts]
+group = "vegetable"
+fridge = "2d"
+synonyms = ["bean sprouts", "alfalfa sprouts", "microgreens"]
+
+# ---------------------------------------------------------------------------
+# Fresh herbs. [FK] Herbs, fresh: refrigerate 7-10 days (the shorter end,
+# rounded down for soft herbs).
+# ---------------------------------------------------------------------------
+
+[fresh-herbs]
+group = "herb"
+fridge = "5d"
+freezer = "1m"
+synonyms = ["basil", "cilantro", "parsley", "dill", "mint", "chives", "rosemary", "thyme", "tarragon"]
+
+# ---------------------------------------------------------------------------
+# Dairy. [CSC] Dairy and eggs section; [FK] Dairy products (butter pantry
+# 1-2 days; cheese after opening).
+# ---------------------------------------------------------------------------
+
+[milk]
+group = "dairy"
+fridge = "7d"
+freezer = "3m"
+opened = "7d"
+synonyms = ["whole milk", "skim milk", "lactose free milk", "buttermilk"]
+
+[nut-milk]
+group = "dairy"
+fridge = "7d"
+freezer = "1m"
+opened = "7d"
+synonyms = ["almond milk", "oat milk", "soy milk", "macadamia milk", "cashew milk", "coconut milk beverage"]
+
+[cream]
+group = "dairy"
+fridge = "7d"
+freezer = "3m"
+opened = "5d"
+synonyms = ["heavy cream", "whipping cream", "half and half"]
+
+[sour-cream]
+group = "dairy"
+fridge = "1w"
+opened = "1w"
+synonyms = ["creme fraiche"]
+
+[yogurt]
+group = "dairy"
+fridge = "1w"
+freezer = "1m"
+synonyms = ["greek yogurt", "kefir", "skyr"]
+
+[cheese-hard]
+group = "dairy"
+fridge = "6m"
+freezer = "6m"
+opened = "3w"
+synonyms = ["cheddar", "parmesan", "swiss cheese", "gouda", "pecorino", "gruyere", "manchego", "asiago"]
+
+[cheese-soft]
+group = "dairy"
+fridge = "1w"
+freezer = "6m"
+synonyms = ["brie", "mozzarella", "feta", "goat cheese", "ricotta", "burrata", "camembert", "queso fresco"]
+
+[cream-cheese]
+group = "dairy"
+fridge = "2w"
+freezer = "2m"
+opened = "1w"
+synonyms = ["mascarpone", "neufchatel"]
+
+[cottage-cheese]
+group = "dairy"
+fridge = "1w"
+freezer = "3m"
+opened = "5d"
+
+[butter]
+group = "dairy"
+pantry = "1d"
+fridge = "1m"
+freezer = "6m"
+synonyms = ["ghee"]
+
+[ice-cream]
+group = "dairy"
+freezer = "2m"
+synonyms = ["gelato", "sorbet", "frozen yogurt"]
+
+# ---------------------------------------------------------------------------
+# Eggs. [FK] Eggs, in shell (#21): refrigerate 3-5 weeks. [CSC] Eggs: raw
+# in shell 3-5 weeks refrigerated; hard cooked 1 week;
+# beaten raw eggs freeze 12 months.
+# ---------------------------------------------------------------------------
+
+[eggs]
+group = "egg"
+fridge = "3w"
+freezer = "12m"
+synonyms = ["egg whites", "quail eggs"]
+
+[hard-boiled-eggs]
+group = "egg"
+fridge = "1w"
+synonyms = ["deviled eggs", "boiled eggs"]
+
+# ---------------------------------------------------------------------------
+# Meat and poultry. [FK] Beef steaks (#40), roasts (#34-39), stew (#41),
+# short ribs (#42), lamb (#44-51), veal (#56-58), pork (#60-72): 3-5 days /
+# 4-12 months; ground beef, lamb, veal, pork (#43, #50, #59, #73): 1-2 days
+# / 3-4 months; chicken and turkey whole (#113-114) 1-2 days / 12 months,
+# parts (#116-121) 9 months. [CSC] Fresh beef, veal, lamb, pork 3-5 days / 4-12
+# months; ground meats 1-2 days / 3-4 months; poultry 1-2 days / 9 months
+# (pieces); sausage raw 1-2 days / 1-2 months; bacon 7 days / 1 month; hot
+# dogs and lunch meat 2 weeks unopened, 1 week (hot dogs) or 3-5 days
+# (lunch meat) opened / 1-2 months; ham, fully cooked slices 3-4 days / 1-2
+# months.
+# ---------------------------------------------------------------------------
+
+[raw-meat]
+group = "meat"
+fridge = "3d"
+freezer = "4m"
+synonyms = ["steak", "ribeye", "sirloin", "beef", "pork", "pork chops", "lamb", "veal", "roast", "brisket", "short ribs", "tenderloin", "pork loin", "beef stew meat"]
+
+[ground-meat]
+group = "meat"
+fridge = "1d"
+freezer = "3m"
+synonyms = ["ground beef", "ground turkey", "ground pork", "ground chicken", "ground lamb", "hamburger patties"]
+
+[raw-poultry]
+group = "meat"
+fridge = "1d"
+freezer = "9m"
+synonyms = ["chicken", "chicken breast", "chicken thighs", "chicken wings", "drumsticks", "whole chicken", "turkey", "turkey breast", "duck", "cornish hen"]
+
+[sausage]
+group = "meat"
+fridge = "1d"
+freezer = "1m"
+synonyms = ["bratwurst", "italian sausage", "chorizo"]
+
+[bacon]
+group = "meat"
+fridge = "7d"
+freezer = "1m"
+opened = "7d"
+synonyms = ["pancetta"]
+
+[hot-dogs]
+group = "meat"
+fridge = "2w"
+freezer = "1m"
+opened = "1w"
+synonyms = ["frankfurters", "wieners"]
+
+[deli-meat]
+group = "meat"
+fridge = "2w"
+freezer = "1m"
+opened = "3d"
+synonyms = ["lunch meat", "deli turkey", "cold cuts", "salami", "prosciutto", "pastrami", "roast beef slices", "bologna"]
+
+[ham]
+group = "meat"
+fridge = "3d"
+freezer = "1m"
+
+# ---------------------------------------------------------------------------
+# Seafood. [FK] Lean fish (#144) 1-2 days / 6-8 months, fatty fish (#146)
+# 1-2 days / 2-3 months, shrimp and scallops (#150-152) 1-3 days.
+# [CSC] Fresh fish and shellfish 1-2 days; lean fish frozen 6-8
+# months, fatty fish 2-3 months (the shorter used); shrimp and scallops
+# frozen 3-6 months; smoked fish 14 days / 2 months.
+# ---------------------------------------------------------------------------
+
+[raw-fish]
+group = "seafood"
+fridge = "1d"
+freezer = "2m"
+synonyms = ["salmon", "cod", "tilapia", "halibut", "trout", "fish fillet", "tuna steak", "mahi mahi", "sea bass"]
+
+[shellfish]
+group = "seafood"
+fridge = "1d"
+freezer = "3m"
+synonyms = ["shrimp", "prawns", "scallops", "crab", "lobster", "mussels", "clams", "oysters"]
+
+[smoked-fish]
+group = "seafood"
+fridge = "2w"
+freezer = "2m"
+opened = "5d"
+synonyms = ["smoked salmon", "lox"]
+
+# ---------------------------------------------------------------------------
+# Bakery. [FK] Commercial bread products (#195): pantry 14-18 days, freeze
+# 3-5 months (refrigerating is not recommended: it stales bread). Tortillas:
+# pantry 1 week, refrigerated 1 month; pastries and cakes 2-3 days at room
+# temperature, 2-3 months frozen; cream and custard pies refrigerated 3-4
+# days.
+# ---------------------------------------------------------------------------
+
+[bread]
+group = "bakery"
+pantry = "14d"
+freezer = "3m"
+synonyms = ["sourdough", "baguette", "bagel", "rolls", "buns", "english muffins", "pita", "brioche", "ciabatta", "naan"]
+
+[tortillas]
+group = "bakery"
+pantry = "1w"
+fridge = "1m"
+freezer = "6m"
+synonyms = ["wraps", "flatbread"]
+
+[pastry]
+group = "bakery"
+pantry = "2d"
+fridge = "1w"
+freezer = "2m"
+synonyms = ["croissant", "muffin", "danish", "donut", "doughnut", "scone"]
+
+[cake]
+group = "bakery"
+pantry = "2d"
+fridge = "1w"
+freezer = "2m"
+synonyms = ["cheesecake", "cupcakes"]
+
+[pie]
+group = "bakery"
+fridge = "3d"
+freezer = "1m"
+synonyms = ["quiche"]
+
+# ---------------------------------------------------------------------------
+# Prepared and fresh foods. [FK] Leftovers with meat, fish, poultry or egg
+# (#173) 3-4 days / 2-3 months, without (#174) 3-4 days / 1-2 months, pizza
+# (#175) 3-4 days / 1-2 months. [CSC] Leftovers 3-4 days / 2-3 months; soups and
+# stews 3-4 days; TV dinners frozen 3-4 months; egg, chicken, tuna and
+# macaroni salads 3-5 days; hummus, guacamole, tofu, fresh pasta and
+# refrigerated juice from [FK].
+# ---------------------------------------------------------------------------
+
+[cooked-leftovers]
+group = "prepared"
+fridge = "3d"
+freezer = "1m"
+synonyms = ["leftovers", "rotisserie chicken", "cooked chicken", "cooked rice", "cooked pasta", "chili con carne", "casserole", "stew"]
+
+[fresh-pasta]
+group = "prepared"
+fridge = "2d"
+freezer = "2m"
+synonyms = ["ravioli", "tortellini", "gnocchi", "fresh noodles"]
+
+[hummus]
+group = "prepared"
+fridge = "1w"
+opened = "5d"
+synonyms = ["baba ganoush", "tzatziki"]
+
+[guacamole]
+group = "prepared"
+fridge = "3d"
+freezer = "3m"
+opened = "2d"
+synonyms = ["fresh salsa", "pico de gallo"]
+
+[tofu]
+group = "prepared"
+fridge = "1w"
+freezer = "5m"
+opened = "3d"
+synonyms = ["tempeh"]
+
+[juice-refrigerated]
+group = "prepared"
+fridge = "1w"
+freezer = "8m"
+opened = "7d"
+synonyms = ["orange juice", "apple juice", "cold pressed juice", "lemonade"]
+
+[deli-salad]
+group = "prepared"
+fridge = "3d"
+synonyms = ["chicken salad", "egg salad", "tuna salad", "potato salad", "pasta salad", "coleslaw"]
+
+[frozen-meal]
+group = "prepared"
+fridge = "3d"
+freezer = "3m"
+synonyms = ["frozen dinner", "tv dinner", "frozen pizza", "frozen burritos", "dumplings", "pot pie"]
+
+[sushi]
+group = "prepared"
+fridge = "1d"
+synonyms = ["sashimi", "poke"]
+
+# ---------------------------------------------------------------------------
+# Opened jars and cans: shelf stable until opened (no pantry figure: an
+# unopened lot never expires), then refrigerated. [CSC] Mayonnaise opened 2
+# months, ketchup and sauces 6 months, salad dressing 1-2 months, the
+# conservative 1 month used; [FK] canned goods, opened: 3-4 days.
+# ---------------------------------------------------------------------------
+
+[condiment-opened]
+group = "condiment"
+opened = "1m"
+synonyms = ["ketchup", "mustard", "mayonnaise", "mayo", "salad dressing", "bbq sauce", "barbecue sauce", "relish", "jam", "jelly", "preserves", "pesto", "tahini"]
+
+[canned-food-opened]
+group = "condiment"
+opened = "3d"
+synonyms = ["canned tuna", "canned beans", "canned tomatoes", "canned vegetables", "canned fruit", "canned soup", "canned salmon"]

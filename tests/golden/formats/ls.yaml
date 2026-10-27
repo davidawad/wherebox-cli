@@ -44,6 +44,12 @@ data:
   sources: []
   created_at: 2026-01-01T00:00:00Z
   updated_at: 2026-01-01T00:00:00Z
+  shelf_life: null
+  shelf_life_basis: null
+  on_hand: 1
+  on_hand_basis: logged
+  expires_at: null
+  expiry_basis: null
 - id: 01J9W000000000000000000003
   asset_id: 000-003
   name: Socket Set
@@ -83,6 +89,12 @@ data:
   sources: []
   created_at: 2026-01-01T00:00:00Z
   updated_at: 2026-01-01T00:00:00Z
+  shelf_life: null
+  shelf_life_basis: null
+  on_hand: 1
+  on_hand_basis: logged
+  expires_at: null
+  expiry_basis: null
 - id: 01J9W000000000000000000001
   asset_id: 000-001
   name: Cordless Drill
@@ -125,3 +137,9 @@ data:
   sources: []
   created_at: 2026-01-01T00:00:00Z
   updated_at: 2026-01-01T00:00:00Z
+  shelf_life: null
+  shelf_life_basis: null
+  on_hand: 1
+  on_hand_basis: logged
+  expires_at: null
+  expiry_basis: null

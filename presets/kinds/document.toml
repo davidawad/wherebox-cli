@@ -4,9 +4,4 @@ name = "document"
 description = "Documents with an expiration: passport, license, insurance policy"
 category = "document"
 tracks = ["expiration"]
-alert_days = 90
-notes = "Enter the expiration date (--expires)."
-
-[[sources]]
-covers = "alert_days"
-cite = "docs/SPEC.md (Presets table): wherebox policy, not an external fact"
+notes = "Documents are not consumables and have no computed expiry; keep the expiration date as a custom field (--field Expiration=YYYY-MM-DD)."

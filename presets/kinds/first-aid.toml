@@ -3,10 +3,5 @@
 name = "first-aid"
 description = "First-aid kit supplies"
 category = "consumable"
-tracks = ["expiration"]
-alert_days = 30
-notes = "Enter the printed expiration date (--expires)."
-
-[[sources]]
-covers = "alert_days"
-cite = "docs/SPEC.md (Presets table): wherebox policy, not an external fact"
+tracks = ["par_level"]
+notes = "Non-perishable: never expires in wherebox (docs/SPEC.md, Shelf life); lots are presumed used up after the reorder cadence and restocked through par levels and `wherebox shopping`. Keep a printed expiration on record as a custom field (--field Expiration=YYYY-MM-DD)."

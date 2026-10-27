@@ -93,7 +93,7 @@ fn on_list_db<T>(
 }
 
 fn inventory(ctx: &Ctx, p: Option<&Profile>, db: &Db) -> Result<Inventory> {
-    Inventory::load(db, p.map(|p| p.name.clone()), ctx.tz.today())
+    Inventory::load(db, p.map(|p| p.name.clone()), &crate::onhand::Estimator::for_ctx(ctx)?)
 }
 
 fn resolve_entry(ctx: &Ctx, e: &Entry) -> Result<Resolved> {
@@ -493,6 +493,8 @@ fn match_json(m: &lists::Match, c: &lists::Contribution) -> Value {
         "lent": c.lent,
         "expired": c.expired,
         "basis": c.basis,
+        "on_hand_basis": if c.estimated { "estimated" } else { "logged" },
+        "used_up": c.used_up,
     })
 }
 
@@ -516,12 +518,20 @@ fn check_rows(list: &ListFile, p: Option<&Profile>, checks: &[EntryCheck]) -> Ve
                 .join("; ");
             let status = match (list.is_wishlist(), c.status) {
                 (true, Status::Fulfilled) => "fulfilled (already own)".to_string(),
-                (_, Status::Short) => format!("short (have {} of {})", fmt_qty(round(c.have)), fmt_qty(c.want)),
+                (_, Status::Short) => format!(
+                    "short (have {}{} of {})",
+                    if c.estimated { "~" } else { "" },
+                    fmt_qty(round(c.have)),
+                    fmt_qty(c.want)
+                ),
                 (_, s) => s.as_str().to_string(),
             };
             let mut status = status;
             if c.expired > 0.0 && c.status != Status::Have {
                 status.push_str(&format!(" ({} {} expired)", fmt_qty(round(c.expired)), c.unit));
+            }
+            if c.used_up > 0.0 && c.status != Status::Have {
+                status.push_str(&format!(" (~{} {} presumed used up)", fmt_qty(round(c.used_up)), c.unit));
             }
             if c.status != Status::Have && c.matches.iter().any(|(_, x)| x.lent) {
                 status.push_str(" (lent out)");
@@ -533,6 +543,8 @@ fn check_rows(list: &ListFile, p: Option<&Profile>, checks: &[EntryCheck]) -> Ve
                 "want": c.want,
                 "unit": c.unit,
                 "have": round(c.have),
+                "on_hand_basis": if c.estimated { "estimated" } else { "logged" },
+                "used_up": round(c.used_up),
                 "expired": round(c.expired),
                 "state": c.status.as_str(),
                 "status": status,
@@ -571,6 +583,14 @@ fn check(ctx: &Ctx, spec: &str, all: bool, th: Option<&str>) -> Result<ExitStatu
     }
     let ready = any_ready || list.is_wishlist();
     let verdict = lines.join("\n");
+    if ctx.out.format == Format::Table {
+        for r in &mut rows {
+            if r.get("on_hand_basis").and_then(Value::as_str) == Some("estimated") {
+                let have = r.get("have").and_then(Value::as_f64).unwrap_or_default();
+                r.insert("have".into(), json!(format!("~{}", fmt_qty(have))));
+            }
+        }
+    }
     let mut cols = vec!["n", "entry", "want", "unit", "have", "status", "matched"];
     if all {
         cols.insert(0, "profile");

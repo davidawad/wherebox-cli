@@ -33,15 +33,10 @@ fn shown(v: &Option<String>) -> Option<String> {
     v.as_deref().map(|s| Life::parse(s).map_or_else(|_| s.to_string(), Life::display))
 }
 
-/// "fridge 3-5 days, freezer 4-12 months".
+/// The default shelf-life type ("raw-meat"; an inline table: "meat.raw (inline)").
 fn shelf_text(p: &Preset) -> Option<String> {
-    let s = &p.shelf_life;
-    let parts: Vec<String> =
-        [("fridge", &s.fridge), ("freezer", &s.freezer), ("pantry", &s.pantry), ("opened", &s.opened)]
-            .iter()
-            .filter_map(|(k, v)| shown(v).map(|t| format!("{k} {t}")))
-            .collect();
-    (!parts.is_empty()).then(|| parts.join(", "))
+    let t = p.default_shelf_life()?;
+    Some(if p.inline_shelf_life().is_some() { format!("{t} (inline)") } else { t })
 }
 
 fn interval_text(p: &Preset) -> Option<String> {
@@ -74,10 +69,6 @@ fn summary(p: &Preset) -> Record {
 
 fn detail(p: &Preset) -> Record {
     let mut r = summary(p);
-    r.insert(
-        "fills".into(),
-        json!(p.shelf_life.date.as_deref().map(|d| if d == "use_by" { "use-by (expires_at)" } else { "best-by" })),
-    );
     r.insert("notes".into(), json!(p.notes));
     if p.defaults.unit.is_some() || !p.defaults.labels.is_empty() || !p.defaults.fields.is_empty() {
         r.insert("defaults".into(), json!(p.defaults));

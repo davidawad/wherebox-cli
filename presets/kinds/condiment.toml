@@ -3,17 +3,9 @@
 name = "condiment"
 description = "Sauces and condiments: ketchup, mustard, mayonnaise, dressings"
 category = "food"
-tracks = ["best_by", "opened_at"]
+tracks = ["shelf_life", "opened_at"]
+shelf_life = "condiment-opened"
 notes = "Unopened shelf life (mayonnaise 3-6 months up to mustard 1-2 years); opened mayonnaise keeps 2 months refrigerated."
-
-[shelf_life]
-date = "best_by"
-pantry = "3-24m"
-
-[[sources]]
-covers = "pantry"
-cite = "USDA FSIS FoodKeeper data, version 128 (2018): Mayonnaise (#350): 3-6 months; Ketchup (#348): 1 year; Salad dressings (#356): 10-12 months; Mustard (#351): 1-2 years (unopened)"
-url = "https://catalog.data.gov/dataset/fsis-foodkeeper-data"
 
 [[sources]]
 covers = "notes"

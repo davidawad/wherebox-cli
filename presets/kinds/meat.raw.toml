@@ -3,15 +3,6 @@
 name = "meat.raw"
 description = "Raw beef, veal, lamb and pork: steaks, chops, roasts, ribs, stew cubes"
 category = "food"
-tracks = ["use_by", "frozen_at"]
+tracks = ["shelf_life", "frozen_at"]
+shelf_life = "raw-meat"
 notes = "Ground meat keeps less long: use meat.ground."
-
-[shelf_life]
-date = "use_by"
-fridge = "3-5d"
-freezer = "4-12m"
-
-[[sources]]
-covers = "fridge, freezer"
-cite = "USDA FSIS FoodKeeper data, version 128 (2018): Beef steaks (#40), roasts (#34-39), stew (#41), short ribs (#42); Lamb chops (#51), leg (#44-46); Veal roasts (#56-58); Pork chops (#63-64), roasts (#60-61), ribs (#72): refrigerate 3-5 days, freeze 4-12 months from purchase"
-url = "https://catalog.data.gov/dataset/fsis-foodkeeper-data"

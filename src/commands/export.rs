@@ -21,7 +21,7 @@ fn sort(items: &mut [Item], lk: &Lookups) {
 
 pub fn run(ctx: &Ctx, a: ExportArgs) -> Result<()> {
     let db = ctx.db()?;
-    let lk = Lookups::load(&db)?;
+    let lk = Lookups::for_ctx(ctx, &db)?;
     let mut filter = a.filter.clone();
     // An export is a backup: every status unless asked otherwise.
     filter.all = filter.all || filter.status.is_empty();
@@ -54,7 +54,7 @@ pub fn run(ctx: &Ctx, a: ExportArgs) -> Result<()> {
                 let mine: Vec<Record> = lots
                     .iter()
                     .filter(|l| l.item_id == i.id)
-                    .map(|l| lot_record(l, None, &lk.tree))
+                    .map(|l| lot_record(l, None, &lk.tree, lk.est.lot(l)))
                     .map(|mut l| {
                         l.remove("unit");
                         l

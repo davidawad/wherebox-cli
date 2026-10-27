@@ -321,12 +321,14 @@ fn toml_scalar(v: &toml::Value) -> Option<String> {
 /// `csv_delimiter = ";"`).
 /// The `[encryption]` section is wherebox's record of database keys
 /// ([`crate::enc_config`]); `[profiles.NAME]` tables describe property
-/// profiles ([`crate::profiles`]). Neither holds settings.
+/// profiles ([`crate::profiles`]); `[shelf_life.TYPE]` tables override and
+/// add shelf-life types ([`crate::shelf_life`]) and `[reorder_cadence]`
+/// gives fallback cadences ([`crate::onhand`]). None holds settings.
 pub fn parse_toml_layer(text: &str) -> Result<Layer> {
     let table: toml::Table = text.parse().map_err(|e| AppError::config(format!("TOML: {e}")))?;
     table
         .iter()
-        .filter(|(k, _)| !matches!(k.as_str(), "encryption" | "profiles"))
+        .filter(|(k, _)| !matches!(k.as_str(), "encryption" | "profiles" | "shelf_life" | "reorder_cadence"))
         .flat_map(|(k, v)| match v {
             toml::Value::Table(t) => t.iter().map(|(k2, v2)| (format!("{k}_{k2}"), v2.clone())).collect::<Vec<_>>(),
             other => vec![(k.clone(), other.clone())],

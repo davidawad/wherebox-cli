@@ -46,7 +46,13 @@
       "fields": {},
       "sources": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "shelf_life": null,
+      "shelf_life_basis": null,
+      "on_hand": 1,
+      "on_hand_basis": "logged",
+      "expires_at": null,
+      "expiry_basis": null
     },
     {
       "id": "01J9W000000000000000000003",
@@ -87,7 +93,13 @@
       "fields": {},
       "sources": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "shelf_life": null,
+      "shelf_life_basis": null,
+      "on_hand": 1,
+      "on_hand_basis": "logged",
+      "expires_at": null,
+      "expiry_basis": null
     },
     {
       "id": "01J9W000000000000000000001",
@@ -133,7 +145,13 @@
       },
       "sources": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "shelf_life": null,
+      "shelf_life_basis": null,
+      "on_hand": 1,
+      "on_hand_basis": "logged",
+      "expires_at": null,
+      "expiry_basis": null
     }
   ]
 }

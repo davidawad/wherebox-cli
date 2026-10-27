@@ -2,17 +2,20 @@
 //!
 //! The list has three parts, per property:
 //!
-//! 1. **below par**: on hand (active lots, else the item quantity) is less
-//!    than `par_level`; buy `reorder_qty`, else up to par.
-//! 2. **expiring**: par items with lots due within the window (default the
-//!    `expiring_within` setting) that would leave less than par on hand.
+//! 1. **below par**: estimated on hand (see [`crate::onhand`]: active lots
+//!    not presumed used up, else the item quantity) is less than
+//!    `par_level`; buy `reorder_qty`, else up to par.
+//! 2. **expiring**: par items with lots whose computed expiry falls within
+//!    the window (default the `expiring_within` setting) that would leave
+//!    less than par on hand.
 //! 3. **reorder**: learned cadence. Purchases are the item's lot acquisition
 //!    dates (plus its purchase date). With three or more, the cadence is the
 //!    median gap between them. With fewer, a `Recurring` custom field
 //!    (`HB.field.Recurring`) gives it (`9d`, `2w`, `weekly`), or when just
 //!    `yes`/`true` the `Avg Interval Days` field, else the average gap of two
 //!    purchases. The item is due once the cadence has passed since the last
-//!    purchase, unless it has an unused lot acquired within the last cadence.
+//!    purchase, unless it has an unused lot (not presumed used up) acquired
+//!    within the last cadence.
 //!    Items last bought before the `--since` cutoff (default 18 months) are
 //!    dropped, not due.
 //! 4. **list** (`--include-list`): what a list still needs (`list shop`).
@@ -26,6 +29,7 @@ use crate::cli::{ParArgs, ShoppingArgs};
 use crate::context::Ctx;
 use crate::db::Db;
 use crate::error::Result;
+use crate::onhand::{avg_interval, median_gap, purchases, recurring, Estimates, Estimator};
 use crate::output::{to_record, Format, Record, Report};
 use crate::profiles::Profile;
 use crate::store::{self, Item, Lot, Tree};
@@ -60,63 +64,8 @@ pub fn par(ctx: &Ctx, a: ParArgs) -> Result<()> {
         Some(p) => format!("par level of {}: {} {unit}", item.name, fmt_qty(p)),
         None => format!("{} has no par level", item.name),
     });
-    let lk = crate::commands::items::Lookups::load(&db)?;
+    let lk = crate::commands::items::Lookups::for_ctx(ctx, &db)?;
     ctx.emit_mutation(&Report::object("item", crate::commands::items::item_record(&item, &lk)))
-}
-
-/// Quantity on hand: active lots when the item tracks lots, else its quantity.
-fn on_hand(item: &Item, lots: &[&Lot]) -> f64 {
-    if lots.is_empty() {
-        item.quantity as f64
-    } else {
-        lots.iter().filter(|l| l.is_active()).map(|l| l.qty).sum()
-    }
-}
-
-/// The `Recurring` field as an interval in days: `Some(Some(d))` for a
-/// cadence, `Some(None)` for "yes, learn it", `None` for no / absent.
-fn recurring(fields: Option<&BTreeMap<String, String>>) -> Option<Option<f64>> {
-    let v = fields?.iter().find(|(k, _)| k.eq_ignore_ascii_case("recurring"))?.1.trim().to_ascii_lowercase();
-    let v = v.strip_prefix("every ").unwrap_or(&v).to_string();
-    match v.as_str() {
-        "no" | "false" | "0" | "n" | "" => None,
-        "daily" | "day" => Some(Some(1.0)),
-        "weekly" | "week" => Some(Some(7.0)),
-        "biweekly" | "fortnightly" => Some(Some(14.0)),
-        "monthly" | "month" => Some(Some(crate::util::parse_duration_days("1m").unwrap_or(30.0))),
-        "yearly" | "annually" | "year" => Some(Some(crate::util::parse_duration_days("1y").unwrap_or(365.0))),
-        other => Some(parse_duration_days(&other.replace(' ', "")).ok().filter(|d| *d > 0.0)),
-    }
-}
-
-/// The `Avg Interval Days` field, when positive.
-fn avg_interval(fields: Option<&BTreeMap<String, String>>) -> Option<f64> {
-    crate::consumable::field(fields, "Avg Interval Days")?.trim().parse::<f64>().ok().filter(|d| *d > 0.0)
-}
-
-/// Median gap in days between consecutive dates (sorted, two or more).
-fn median_gap(dates: &[NaiveDate]) -> f64 {
-    let mut gaps: Vec<i64> = dates.windows(2).map(|w| (w[1] - w[0]).num_days()).collect();
-    gaps.sort_unstable();
-    let n = gaps.len();
-    if n % 2 == 1 {
-        gaps[n / 2] as f64
-    } else {
-        (gaps[n / 2 - 1] + gaps[n / 2]) as f64 / 2.0
-    }
-}
-
-/// Purchase dates of an item, oldest first, without duplicates.
-fn purchases(item: &Item, lots: &[&Lot]) -> Vec<NaiveDate> {
-    let mut d: Vec<NaiveDate> = lots
-        .iter()
-        .filter_map(|l| l.acquired_at.as_deref())
-        .chain(item.purchase_time.as_deref())
-        .filter_map(|s| date_of(s).ok())
-        .collect();
-    d.sort();
-    d.dedup();
-    d
 }
 
 struct Line<'a> {
@@ -138,10 +87,12 @@ impl<'a> Line<'a> {
 
 /// What to buy, and how many recurring items were dropped (last bought
 /// before `cutoff`).
+#[allow(clippy::too_many_arguments)]
 fn needs<'a>(
     items: &'a [Item],
     lots: &[Lot],
     fields: &BTreeMap<String, BTreeMap<String, String>>,
+    est: &Estimates,
     within: i64,
     today: NaiveDate,
     cutoff: NaiveDate,
@@ -150,7 +101,10 @@ fn needs<'a>(
     let mut dropped = 0;
     for item in items.iter().filter(|i| !i.is_gone()) {
         let mine: Vec<&Lot> = lots.iter().filter(|l| l.item_id == item.id).collect();
-        let have = on_hand(item, &mine);
+        let view = est.get(&item.id);
+        let have = view.map_or(item.quantity as f64, |v| v.on_hand);
+        let tilde = if view.is_some_and(|v| v.estimated) { "~" } else { "" };
+        let used_up = |l: &Lot| est.lot(l).is_some_and(|v| v.used_up);
         let unit = item.unit.as_deref().unwrap_or("ea");
         if let Some(par) = item.par_level {
             if have < par {
@@ -158,19 +112,19 @@ fn needs<'a>(
                     item,
                     item.reorder_qty.unwrap_or(par - have),
                     "below par",
-                    format!("{} of {} {unit} on hand", fmt_qty(have), fmt_qty(par)),
+                    format!("{tilde}{} of {} {unit} on hand", fmt_qty(have), fmt_qty(par)),
                 ));
                 continue;
             }
-            let due: Vec<(&Lot, i64)> = mine
+            let due: Vec<(&Lot, NaiveDate)> = mine
                 .iter()
-                .filter(|l| l.is_active() && l.qty > 0.0)
-                .filter_map(|l| Some((*l, crate::util::days_until(l.due()?, today)?)))
-                .filter(|(_, d)| *d <= within)
+                .filter(|l| l.is_active() && l.qty > 0.0 && !used_up(l))
+                .filter_map(|l| Some((*l, est.lot(l)?.expiry.as_ref()?.date)))
+                .filter(|(_, d)| (*d - today).num_days() <= within)
                 .collect();
             let going: f64 = due.iter().map(|(l, _)| l.qty).sum();
             if !due.is_empty() && have - going < par {
-                let first = due.iter().map(|(l, _)| l.due().unwrap_or_default()).min().unwrap_or_default();
+                let first = due.iter().map(|(_, d)| *d).min().map(|d| d.to_string()).unwrap_or_default();
                 out.push(Line::new(
                     item,
                     item.reorder_qty.unwrap_or(par - (have - going)),
@@ -216,7 +170,7 @@ fn needs<'a>(
         let window_start = today - chrono::Duration::days(every as i64);
         let stocked = mine.iter().any(|l| {
             let got = l.acquired_at.as_deref().or(Some(l.created_at.as_str())).and_then(|d| date_of(d).ok());
-            l.is_active() && l.qty > 0.0 && got.is_some_and(|d| d > window_start)
+            l.is_active() && l.qty > 0.0 && !used_up(l) && got.is_some_and(|d| d > window_start)
         });
         if since as f64 >= every && !stocked {
             let last_qty = mine.iter().filter(|l| l.acquired_at.is_some()).max_by_key(|l| l.fifo_key()).map(|l| l.qty);
@@ -250,7 +204,8 @@ fn rows_for(
     let fields: BTreeMap<String, BTreeMap<String, String>> = store::all_item_fields(db)?.into_iter().collect();
     let tree = Tree::load(db)?;
     let today = ctx.tz.today();
-    let (mut lines, gone) = needs(&items, &lots, &fields, within, today, date_before(today, since));
+    let est = Estimator::for_ctx(ctx)?.all(db)?;
+    let (mut lines, gone) = needs(&items, &lots, &fields, &est, within, today, date_before(today, since));
     *dropped += gone;
     let order = |r: &str| ["below par", "expiring", "reorder"].iter().position(|x| *x == r).unwrap_or(9);
     lines.sort_by(|a, b| {
@@ -357,6 +312,29 @@ mod tests {
     use super::*;
 
     const OLD: NaiveDate = NaiveDate::MIN;
+
+    /// Estimates of these items and lots (built-in types, default cadences).
+    fn est(
+        items: &[Item],
+        lots: &[Lot],
+        fields: &BTreeMap<String, BTreeMap<String, String>>,
+        today: NaiveDate,
+    ) -> Estimates {
+        let f: std::collections::HashMap<_, _> = fields.clone().into_iter().collect();
+        Estimator::builtin(today).of(items, lots, &f, &Default::default(), &Tree::default(), &Default::default())
+    }
+
+    fn needs<'a>(
+        items: &'a [Item],
+        lots: &[Lot],
+        fields: &BTreeMap<String, BTreeMap<String, String>>,
+        within: i64,
+        today: NaiveDate,
+        cutoff: NaiveDate,
+    ) -> (Vec<Line<'a>>, usize) {
+        let e = est(items, lots, fields, today);
+        super::needs(items, lots, fields, &e, within, today, cutoff)
+    }
 
     fn item(id: &str) -> Item {
         Item { id: id.into(), name: id.into(), quantity: 0, status: "owned".into(), ..Default::default() }
