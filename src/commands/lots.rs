@@ -48,6 +48,7 @@ pub fn new_lot(item_id: &str, qty: f64, d: &LotFlags, location_id: Option<i64>, 
         unit_price: None,
         source_ref: None,
         confirmed_at: None,
+        vendor: None,
     })
 }
 
@@ -90,10 +91,10 @@ fn p_day(p: &Parse, s: &str) -> Result<String> {
 
 pub fn run(ctx: &Ctx, cmd: LotCmd) -> Result<()> {
     match cmd {
-        LotCmd::Add { item, qty, at, dates } => add(ctx, &item, &qty, at.as_deref(), &dates),
+        LotCmd::Add { item, qty, at, vendor, dates } => add(ctx, &item, &qty, at.as_deref(), vendor.as_deref(), &dates),
         LotCmd::Ls { item, all } => ls(ctx, item.as_deref(), all),
-        LotCmd::Edit { lot, qty, at, status, dates } => {
-            edit(ctx, &lot, qty.as_deref(), at.as_deref(), status.as_deref(), &dates)
+        LotCmd::Edit { lot, qty, at, status, vendor, dates } => {
+            edit(ctx, &lot, qty.as_deref(), at.as_deref(), status.as_deref(), vendor.as_deref(), &dates)
         }
         LotCmd::Rm { lot } => rm(ctx, &lot),
         LotCmd::Confirm { item, qty, lot, on } => confirm(ctx, &item, qty.as_deref(), lot.as_deref(), on.as_deref()),
@@ -114,7 +115,7 @@ fn record(l: &Lot, item: &Item, tree: &Tree, est: &Estimates) -> Record {
 const LOT_TABLE: &[&str] =
     &["id", "item", "qty", "unit", "status", "acquired_at", "expires_at", "expiry_basis", "used_up", "location"];
 
-fn add(ctx: &Ctx, item: &str, qty: &str, at: Option<&str>, dates: &LotFlags) -> Result<()> {
+fn add(ctx: &Ctx, item: &str, qty: &str, at: Option<&str>, vendor: Option<&str>, dates: &LotFlags) -> Result<()> {
     let db = ctx.db()?;
     let fmts = ctx.input_date_formats();
     let p = Parse { tz: &ctx.tz, date_formats: &fmts };
@@ -124,8 +125,9 @@ fn add(ctx: &Ctx, item: &str, qty: &str, at: Option<&str>, dates: &LotFlags) -> 
     let mut tree = Tree::load(&db)?;
     let lot = db.transaction(|db| {
         let loc = at.map(|a| tree.resolve_or_create(db, a).map(|r| r.0)).transpose()?;
-        let lot =
+        let mut lot =
             new_lot(&item.id, parse_qty(qty)?, dates, loc.filter(|l| Some(*l) != item.location_id), &p, &today(ctx))?;
+        lot.vendor = vendor.map(|v| crate::sourcing::vendor_ref(db, v)).transpose()?.flatten();
         check_best_by(&item, &lot, ty.as_deref())?;
         store::insert_lot(db, &lot)?;
         store::sync_lot_quantity(db, &item.id)?;
@@ -162,7 +164,15 @@ fn ls(ctx: &Ctx, item: Option<&str>, all: bool) -> Result<()> {
     ctx.emit(&Report::list("lots", rows).table_columns(LOT_TABLE))
 }
 
-fn edit(ctx: &Ctx, lot: &str, qty: Option<&str>, at: Option<&str>, status: Option<&str>, d: &LotFlags) -> Result<()> {
+fn edit(
+    ctx: &Ctx,
+    lot: &str,
+    qty: Option<&str>,
+    at: Option<&str>,
+    status: Option<&str>,
+    vendor: Option<&str>,
+    d: &LotFlags,
+) -> Result<()> {
     let db = ctx.db()?;
     let fmts = ctx.input_date_formats();
     let p = Parse { tz: &ctx.tz, date_formats: &fmts };
@@ -173,6 +183,9 @@ fn edit(ctx: &Ctx, lot: &str, qty: Option<&str>, at: Option<&str>, status: Optio
     }
     if let Some(s) = status {
         l.status = check_choice("lot status", s, LOT_STATUSES)?;
+    }
+    if let Some(v) = vendor {
+        l.vendor = crate::sourcing::vendor_ref(&db, v)?;
     }
     let set = |slot: &mut Option<String>, v: &Option<String>| -> Result<()> {
         if let Some(v) = v {

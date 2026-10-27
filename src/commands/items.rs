@@ -136,6 +136,7 @@ pub fn lot_record(l: &Lot, unit: Option<&str>, tree: &Tree, view: Option<&LotVie
         "location": tree.opt_path(l.location_id),
         "unit_price": l.unit_price.map(crate::util::money_value),
         "source_ref": l.source_ref,
+        "vendor": l.vendor,
     }));
     for (k, v) in crate::onhand::lot_fields(view) {
         r.insert(k.to_string(), v);

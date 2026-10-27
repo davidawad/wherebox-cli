@@ -159,6 +159,52 @@ const SCHEMA_V3: &str = r"
 ALTER TABLE lots ADD COLUMN confirmed_at TEXT;
 ";
 
+/// Store sourcing (docs/SPEC.md, "Stores and sourcing"): stores, chain
+/// layouts, store products per food, and where a lot was bought.
+const SCHEMA_V4: &str = r"
+CREATE TABLE IF NOT EXISTS stores (
+    id          TEXT PRIMARY KEY,
+    chain       TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    address     TEXT,
+    website     TEXT,
+    notes       TEXT,
+    layout      TEXT,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS chain_layouts (
+    chain       TEXT PRIMARY KEY,
+    layout      TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS store_products (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    food        TEXT NOT NULL,
+    food_key    TEXT NOT NULL,
+    item_id     TEXT,
+    store_id    TEXT REFERENCES stores(id),
+    chain       TEXT,
+    name        TEXT NOT NULL,
+    brand       TEXT,
+    size        TEXT,
+    price       INTEGER,
+    price_seen  TEXT,
+    url         TEXT,
+    sku         TEXT,
+    plu         TEXT,
+    upc         TEXT,
+    section     TEXT,
+    aisle       TEXT,
+    notes       TEXT,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_store_products_food ON store_products(food_key);
+CREATE INDEX IF NOT EXISTS idx_store_products_store ON store_products(store_id);
+ALTER TABLE lots ADD COLUMN vendor TEXT;
+";
+
 pub const MIGRATIONS: &[Migration] = &[
     Migration { version: 1, name: "inventory schema", apply: |db| db.execute_batch(SCHEMA_V1) },
     Migration { version: 2, name: "lot unit price and source ref", apply: |db| db.execute_batch(SCHEMA_V2) },
@@ -170,6 +216,7 @@ pub const MIGRATIONS: &[Migration] = &[
             retire_stored_expiry(db)
         },
     },
+    Migration { version: 4, name: "stores, chain layouts and store products", apply: |db| db.execute_batch(SCHEMA_V4) },
 ];
 
 /// A built-in preset's old lot fill: (field, fridge, freezer, pantry).
@@ -222,8 +269,10 @@ fn legacy_date(preset: Option<&str>, field: &str, lot: &crate::store::Lot, path:
 /// perishables every date the old preset fill would have computed; an
 /// explicit date (one that differs) stays as the printed best-by.
 fn retire_stored_expiry(db: &Db) -> Result<()> {
+    // Only the columns this version has: later migrations add more.
     let rows = db.query(
-        "SELECT id, item_id, expires_at, best_by FROM lots WHERE expires_at IS NOT NULL OR best_by IS NOT NULL",
+        "SELECT id, item_id, expires_at, best_by, acquired_at, frozen_at, location_id FROM lots \
+         WHERE expires_at IS NOT NULL OR best_by IS NOT NULL",
         &[],
     )?;
     if rows.is_empty() {
@@ -238,7 +287,13 @@ fn retire_stored_expiry(db: &Db) -> Result<()> {
     for r in rows.iter() {
         let (Some(lot_id), Some(item_id)) = (r.s(0), r.s(1)) else { continue };
         let (expires, best_by) = (r.s(2), r.s(3));
-        let Some(lot) = crate::store::get_lot(db, &lot_id)? else { continue };
+        let lot = crate::store::Lot {
+            id: lot_id.clone(),
+            acquired_at: r.s(4),
+            frozen_at: r.s(5),
+            location_id: r.i(6),
+            ..Default::default()
+        };
         let Some(item) = crate::store::get_item(db, &item_id)? else { continue };
         let facts = crate::shelf_life::ItemFacts {
             item: &item,
@@ -376,7 +431,7 @@ mod tests {
         lot("R2", &ribeye, Some("2026-01-10"), None); // typed in: kept as the printed date
         lot("M1", &milk, None, Some("2026-01-09"));
         lot("P1", &rice, None, Some("2027-01-01"));
-        assert_eq!(migrate(&db).unwrap(), [3]);
+        assert_eq!(migrate(&db).unwrap(), [3, 4]);
         let got = |id: &str| {
             let r = db.query_opt("SELECT expires_at, best_by FROM lots WHERE id = ?1", &[text(id)]).unwrap().unwrap();
             (r.s(0), r.s(1))
@@ -387,5 +442,50 @@ mod tests {
         assert_eq!(got("M1"), (None, Some("2026-01-09".into())));
         assert_eq!(got("P1"), (None, None), "dry goods never expire");
         assert_eq!(store::get_lot(&db, "R2").unwrap().unwrap().confirmed_at, None);
+    }
+
+    /// A version-3 database (the schema before store sourcing) gains the
+    /// store tables and lot vendors, and keeps its lots.
+    #[test]
+    fn store_tables_migrate_from_v3() {
+        let t = tempfile::TempDir::new().unwrap();
+        let db = Db::open_plain(&t.path().join("v3.db")).unwrap();
+        ensure_table(&db).unwrap();
+        for m in &MIGRATIONS[..3] {
+            (m.apply)(&db).unwrap();
+            db.execute(
+                "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?1, ?2, ?3)",
+                &[int(m.version), text(m.name), text("2026-01-01T00:00:00Z")],
+            )
+            .unwrap();
+        }
+        let i = Item::new("Walnuts").unwrap();
+        store::insert_item(&db, &i).unwrap();
+        db.execute(
+            "INSERT INTO lots (id, item_id, qty, acquired_at, status, created_at) \
+             VALUES ('L1', ?1, 2, '2026-01-01', 'sealed', '2026-01-01T00:00:00Z')",
+            &[text(&i.id)],
+        )
+        .unwrap();
+        assert_eq!(migrate(&db).unwrap(), [4]);
+        assert_eq!(current_version(&db).unwrap(), 4);
+        let lot = store::get_lot(&db, "L1").unwrap().unwrap();
+        assert_eq!((lot.qty, lot.vendor), (2.0, None));
+        use crate::sourcing::{self, Product, Store};
+        assert!(sourcing::all_stores(&db).unwrap().is_empty());
+        let s =
+            Store { id: "corner".into(), chain: "Corner Grocer".into(), name: "Corner".into(), ..Default::default() };
+        sourcing::insert_store(&db, &s).unwrap();
+        let p = Product {
+            food: "walnuts".into(),
+            food_key: sourcing::food_key("walnuts"),
+            store_id: Some("corner".into()),
+            name: "Walnut Halves".into(),
+            ..Default::default()
+        };
+        let id = sourcing::insert_product(&db, &p).unwrap();
+        assert_eq!(sourcing::get_product(&db, id).unwrap().unwrap().name, "Walnut Halves");
+        assert_eq!(sourcing::vendor_ref(&db, "Corner").unwrap().as_deref(), Some("corner"));
+        assert!(migrate(&db).unwrap().is_empty(), "nothing left to apply");
     }
 }

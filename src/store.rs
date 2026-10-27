@@ -833,6 +833,8 @@ pub struct Lot {
     pub source_ref: Option<String>,
     /// The last `lot confirm`: the lot was on hand that day.
     pub confirmed_at: Option<String>,
+    /// Where it was bought: a store id (`store ls`) or any text.
+    pub vendor: Option<String>,
 }
 
 impl Lot {
@@ -854,7 +856,7 @@ impl Lot {
 }
 
 const LOT_COLS: &str = "id, item_id, qty, acquired_at, opened_at, best_by, frozen_at, location_id, status, \
-    created_at, unit_price, source_ref, confirmed_at";
+    created_at, unit_price, source_ref, confirmed_at, vendor";
 
 fn lot_from(r: &Row) -> Lot {
     Lot {
@@ -871,6 +873,7 @@ fn lot_from(r: &Row) -> Lot {
         unit_price: r.i(10),
         source_ref: r.s(11),
         confirmed_at: r.s(12),
+        vendor: r.s(13),
     }
 }
 
@@ -889,12 +892,13 @@ fn lot_params(l: &Lot) -> Vec<Value> {
         opt_int(l.unit_price),
         opt_text(l.source_ref.as_ref()),
         opt_text(l.confirmed_at.as_ref()),
+        opt_text(l.vendor.as_ref()),
     ]
 }
 
 pub fn insert_lot(db: &Db, l: &Lot) -> Result<()> {
     check_choice("lot status", &l.status, LOT_STATUSES)?;
-    db.execute(&format!("INSERT INTO lots ({LOT_COLS}) VALUES ({})", placeholders(13)), &lot_params(l))
+    db.execute(&format!("INSERT INTO lots ({LOT_COLS}) VALUES ({})", placeholders(14)), &lot_params(l))
         .map_err(|e| unique_err(e, || format!("lot '{}' or source ref already exists", l.id)))
         .map(|_| ())
 }

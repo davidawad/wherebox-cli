@@ -35,6 +35,7 @@ pub mod prompt;
 pub mod seal_output;
 pub mod sheet;
 pub mod shelf_life;
+pub mod sourcing;
 pub mod sshkey;
 pub mod store;
 pub mod ulid;

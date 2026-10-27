@@ -311,7 +311,8 @@ fn is_size_token(t: &str) -> bool {
     is_number(num) && (unit.is_empty() || SIZE_UNITS.contains(&unit))
 }
 
-fn singular(t: &str) -> String {
+/// A word's singular (`berries` -> `berry`, `tomatoes` -> `tomato`).
+pub fn singular(t: &str) -> String {
     if t.len() <= 3 || t.ends_with("ss") || t.ends_with("us") || t.ends_with("is") {
         return t.to_string();
     }

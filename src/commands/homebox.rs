@@ -266,6 +266,7 @@ pub fn parse_row(line: usize, row: &RawRow) -> Result<Incoming> {
             location: inc.location.clone().flatten(),
             unit_price: get("Lot Price"),
             source_ref: get("Lot Ref"),
+            vendor: None,
         });
         // HB.quantity on a lot row is the lot's, not the item's.
         inc.values.retain(|(k, _)| *k != "quantity");

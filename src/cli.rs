@@ -556,6 +556,9 @@ pub enum LotCmd {
         /// Where this lot is (fridge, freezer, pantry shelf; default: the item's location)
         #[arg(long, short = 'a')]
         at: Option<String>,
+        /// Where it was bought: a store (id or name, see `store ls`) or any text
+        #[arg(long, value_name = "STORE")]
+        vendor: Option<String>,
         #[command(flatten)]
         dates: LotFlags,
     },
@@ -576,6 +579,9 @@ pub enum LotCmd {
         /// sealed, open, consumed, discarded
         #[arg(long)]
         status: Option<String>,
+        /// Where it was bought: a store (id or name) or any text (empty clears it)
+        #[arg(long, value_name = "STORE")]
+        vendor: Option<String>,
         #[command(flatten)]
         dates: LotFlags,
     },

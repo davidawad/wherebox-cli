@@ -46,6 +46,8 @@ pub struct IncomingLot {
     pub unit_price: Option<String>,
     /// The purchase row this lot came from; re-imports match on it.
     pub source_ref: Option<String>,
+    /// Where it was bought (a store id or any text).
+    pub vendor: Option<String>,
 }
 
 /// An item as read from one input row. `Some(None)` means "the column is
@@ -361,6 +363,7 @@ fn parse_lots(v: &str) -> Result<Vec<IncomingLot>> {
                 location: s("location"),
                 unit_price: s("unit_price"),
                 source_ref: s("source_ref"),
+                vendor: s("vendor"),
             })
         })
         .collect()
@@ -795,6 +798,7 @@ impl Applier<'_> {
             unit_price: l.unit_price.as_deref().map(crate::util::parse_money).transpose()?,
             source_ref: l.source_ref.clone(),
             confirmed_at: existing.as_ref().and_then(|e| e.confirmed_at.clone()),
+            vendor: l.vendor.clone().or_else(|| existing.as_ref().and_then(|e| e.vendor.clone())),
         };
         if lot.best_by.is_some() {
             let fields = store::item_fields(self.db, &item.id)?;
