@@ -19,3 +19,20 @@ title = "Lake House"
 address = "1 Shore Rd"
 db_path = "~/vaults/lake-house.db"
 # rented = true   # a rental: insurance reports cover contents only
+
+# Shelf-life types: override a built-in type (given values replace, "none"
+# removes one, synonyms are added) or add your own. See `wherebox shelf-life ls`.
+[shelf_life.milk]
+fridge = "5d"
+
+[shelf_life.kombucha]
+group = "prepared"
+fridge = "30d"
+synonyms = ["booch"]
+
+# Non-perishables are presumed used up once older than their reorder
+# cadence (the median gap between purchases); without purchase history,
+# these apply: by preset name, then preset category, then default.
+[reorder_cadence]
+default = "90d"
+supplement = "60d"

@@ -6,22 +6,23 @@ them; `wherebox preset show NAME` prints one with its sources.
 
 ```sh
 wherebox add Ribeye --preset meat.raw --at "Kitchen / Fridge"
-# meat.raw: use by 2026-01-04 (3-5 days in the fridge from purchase on 2026-01-01)
-wherebox lot add Ribeye 2 --at "Garage / Chest Freezer"     # use by +4 months, frozen today
+# expires 2026-01-04 (raw-meat: 3 days in the fridge from purchase on 2026-01-01)
+wherebox lot add Ribeye 2 --at "Garage / Chest Freezer"     # expires in 4 months
 ```
 
 ## What a preset fills in
 
-* **Lot dates** (`[shelf_life]`). `add --preset` with a shelf-life preset
-  starts a lot (acquired today unless `--acquired`); `lot add` dates new lots
-  of an item with a preset. Where the lot is kept decides the figure: the
-  nearest segment of the lot's location (else the item's) named like a
-  freezer (`Freezer`, `Chest Freezer`, `Freezer drawer`), a fridge (`Fridge`,
-  `Refrigerator`) or a pantry (`Pantry`, `Cupboard`, `Larder`). An unknown
-  place uses the fridge figure, else the pantry, else the freezer. In the
-  freezer the clock starts at `frozen_at` (set to the acquired date when
-  missing). An opened lot is capped by the `opened` figure. A range such as
-  `3-5d` fills with its shorter end. Dates given on the command line win.
+* **A default shelf-life type** (`shelf_life = "raw-meat"`). Shelf lives
+  are not preset values: they belong to shelf-life types (`wherebox
+  shelf-life ls`, `data/shelf_life.toml`, docs/SPEC.md "Shelf life and on
+  hand"). An item of a food preset whose name names no better type (`Ribeye`
+  is `raw-meat` by name anyway) gets the preset's type; `add --preset` then
+  starts a lot so its expiry can be computed. Expiry is computed from where
+  the lot is kept now, never stored. Presets of non-perishables (`pantry`,
+  `beverage`, `medicine`, `supplement`, `household`...) name no type: their
+  items never expire. A user preset file with the old inline `[shelf_life]`
+  table (`fridge`, `freezer`, `pantry`, `opened`; `date` is ignored) still
+  loads: the table becomes a shelf-life type named after the preset.
 * **Service dates** (`[intervals]`) as custom fields, counted from the item's
   `Installed` field, else its purchase date: `Replace By` (not rolled
   forward, so an overdue replacement shows as past), `Next Inspection`,
@@ -29,8 +30,8 @@ wherebox lot add Ribeye 2 --at "Garage / Chest Freezer"     # use by +4 months, 
   `warranty` term sets `warranty_expires`. Nothing is guessed without a base
   date.
 * **Defaults** (`[defaults]`): `unit`, `labels`, custom `fields` for new items.
-* **Alerts**: `alert_days` widens `wherebox expiring` for the preset's items
-  (medicine 30 days, documents 90) unless `--within` is given.
+* **Alerts**: `alert_days` widens `wherebox expiring` for the preset's
+  (perishable) items unless `--within` is given.
 * **Reports**: presets with category `food` or `consumable` are left out of
   the insurance report; presets that track `serial` make a missing serial
   number a gap.
@@ -43,18 +44,19 @@ explained in `notes`.
 
 | preset | value | source |
 |---|---|---|
-| food (`meat.raw`, `meat.ground`, `poultry.raw`, `seafood.raw`, `eggs`, `bread`, `leftovers`, `frozen`, `pantry`, `condiment`) | fridge, freezer and pantry shelf life | USDA FSIS FoodKeeper data, version 128 (<https://catalog.data.gov/dataset/fsis-foodkeeper-data>); each preset names the FoodKeeper product ids it uses |
+| food (`meat.raw`, `meat.ground`, `poultry.raw`, `seafood.raw`, `eggs`, `bread`, `leftovers`, `frozen`, `condiment`) | the default shelf-life type; the type's figures cite USDA FSIS FoodKeeper data, version 128 (<https://catalog.data.gov/dataset/fsis-foodkeeper-data>) and the Cold Food Storage Chart per group in `data/shelf_life.toml` | |
 | `frozen`, `condiment` (notes) | frozen food safe indefinitely; opened mayonnaise 2 months | USDA FSIS Cold Food Storage Chart (<https://www.foodsafety.gov/food-safety-charts/cold-food-storage-charts>) |
 | `smoke-detector` | replace every 10 years, test monthly | NFPA (<https://www.nfpa.org/education-and-research/home-fire-safety/smoke-alarms>) |
 | `fire-extinguisher` | inspect monthly, maintain yearly | NFPA 10 (<https://www.nfpa.org/codes-and-standards/nfpa-10-standard-development/10>) |
 | `filter` | check monthly, replace at least every 3 months (HVAC air filters) | ENERGY STAR Maintenance Checklist (<https://www.energystar.gov/saveathome/heating-cooling/maintenance-checklist>) |
 | `hvac` | yearly professional check-up | ENERGY STAR Maintenance Checklist |
-| `medicine`, `supplement`, `first-aid` (30), `document` (90), `appliance`, `electronics`, `tool`, `furniture` (90) | `alert_days` | wherebox policy (docs/SPEC.md), not an external fact |
+| `appliance`, `electronics`, `tool`, `furniture` (90) | `alert_days` | wherebox policy (docs/SPEC.md), not an external fact |
 
-Left unset for lack of a single citable figure: dairy, produce, beverage and
-alcohol shelf lives (FoodKeeper varies by product; the notes quote examples),
-CO alarm replacement (maker's schedule), vehicle/generator/water-heater
-service, warranty terms, and reappraisal intervals for valuables.
+Dairy and produce presets name no single type: their items get one by name
+(`milk`, `yogurt`, `banana`, `spinach`...). Left unset for lack of a single
+citable figure: CO alarm replacement (maker's schedule),
+vehicle/generator/water-heater service, warranty terms, and reappraisal
+intervals for valuables.
 
 ## File format
 
@@ -66,16 +68,11 @@ file in `<config dir>/presets/kinds/` (next to `config.toml`) with the same
 name = "meat.raw"                 # lowercase letters, digits, '.', '-', '_'
 description = "Raw beef, veal, lamb and pork"
 category = "food"                 # food consumable safety durable valuable document other
-tracks = ["use_by", "frozen_at"]  # see below
+tracks = ["shelf_life", "frozen_at"]  # see below
 alert_days = 2                    # optional
 notes = "free text"               # optional
 
-[shelf_life]                      # optional
-date = "use_by"                   # which lot date to fill: use_by (expires_at) or best_by
-fridge = "3-5d"                   # d, w, m, y; a range fills with its shorter end
-freezer = "4-12m"
-pantry = "1y"
-opened = "2m"                     # after opening
+shelf_life = "raw-meat"           # optional: the default shelf-life type of its items
 
 [intervals]                       # optional
 replace = "10y"

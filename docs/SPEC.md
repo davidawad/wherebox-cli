@@ -411,9 +411,10 @@ e), and what it matched (`via`, e.g. `cohort nuts: any "pecans"`).
 Per matched item: durables (no lots) count `quantity` when owned, stored or
 lent (kit/packing: owned or stored). Consumables count their unconsumed lots
 (sealed, open) whose location satisfies `at`, by estimated on hand (see
-Shelf life): lots presumed used up don't count; lots past their computed
-expiry but confirmed after it are reported separately (`expired`) and
-don't count. Quantities convert
+Shelf life): lots presumed used up don't count (reported as `used_up`, the
+row's `on_hand_basis` is `estimated` and the table shows `~2`); lots past
+their computed expiry but confirmed after it are reported separately
+(`expired`) and don't count. Quantities convert
 between compatible units: mass `g kg oz lb`, volume `ml l tsp tbsp cup`
 (`fl oz` is volume, `oz` mass), and count: `ea` (`each`, `ct`, `count`, `pc`,
 `pcs`, `piece`), `can`, `jar`, `bottle`, `box`, `bag`, `pack` (`pk`),
