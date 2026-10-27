@@ -988,11 +988,18 @@ pub fn run(ctx: &Ctx, a: ImportArgs) -> Result<()> {
     let flag_format = format_from_flag(ctx.format_flag);
     let explicit = a.input_format.or(flag_format);
     let is_sheet = explicit == Some(InputFormat::Spreadsheet) || (explicit.is_none() && sheet::is_spreadsheet(&a.file));
+    let mut envelope: Option<Value> = None;
     let (fmt, rows) = if is_sheet {
         (InputFormat::Spreadsheet, sheet_rows(&a.file, &m)?)
     } else {
         let text = read_input(&a.file)?;
         let fmt = detect_format(&a.file, explicit, &text);
+        if fmt == InputFormat::Json {
+            // a wherebox/v1 export also carries stores and store products
+            envelope = serde_json::from_str::<Value>(&text).ok().filter(|v| {
+                ["stores", "chain_layouts", "store_products"].iter().any(|k| v.get(k).is_some_and(Value::is_array))
+            });
+        }
         let delim = a
             .input_delimiter
             .as_deref()
@@ -1100,6 +1107,7 @@ pub fn run(ctx: &Ctx, a: ImportArgs) -> Result<()> {
         types: crate::shelf_life::Types::load(&ctx.resolved.config_path, &catalog)?,
         not_perishable: Vec::new(),
     };
+    let mut stores = crate::sourcing::Imported::default();
     db.begin()?;
     let result = (|| -> Result<Vec<String>> {
         for g in &groups {
@@ -1107,6 +1115,9 @@ pub fn run(ctx: &Ctx, a: ImportArgs) -> Result<()> {
                 Ok(r) => plan.push(r),
                 Err(e) => fail(g[0].line, e.message, &mut plan)?,
             }
+        }
+        if let Some(env) = &envelope {
+            stores = crate::sourcing::import(&db, env)?;
         }
         let mut warnings = ap.link_parents()?;
         if !ap.not_perishable.is_empty() {
@@ -1149,6 +1160,12 @@ pub fn run(ctx: &Ctx, a: ImportArgs) -> Result<()> {
         t.labels,
         t.lots
     ));
+    if envelope.is_some() {
+        ctx.info(&format!(
+            "{} store(s), {} chain layout(s), {} store product(s)",
+            stores.stores, stores.chain_layouts, stores.store_products
+        ));
+    }
     if !ignored.is_empty() {
         ctx.info(&format!("ignored column(s): {}", ignored.join(", ")));
     }
@@ -1168,6 +1185,7 @@ pub fn run(ctx: &Ctx, a: ImportArgs) -> Result<()> {
             json!({"rows": rows.len(), "created": t.created, "updated": t.updated, "unchanged": t.unchanged, "failed": failed,
                    "locations_created": t.locations, "labels_created": t.labels, "lots": t.lots}),
         )
+        .meta("stores", json!(stores))
         .meta("ignored_columns", json!(ignored))
         .meta("warnings", json!(warnings));
     if out.format == Format::Table && !a.dry_run && !ctx.resolved.flag("verbose") {

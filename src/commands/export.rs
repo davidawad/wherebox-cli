@@ -76,7 +76,15 @@ pub fn run(ctx: &Ctx, a: ExportArgs) -> Result<()> {
                 r
             })
             .collect();
-        Report::list("export", records).exact().meta("profile", json!(ctx.profile.as_ref().map(|p| &p.name)))
+        let mut r =
+            Report::list("export", records).exact().meta("profile", json!(ctx.profile.as_ref().map(|p| &p.name)));
+        // stores and store products travel in the envelope (not in flat rows)
+        if out.format.is_envelope() {
+            for (k, v) in crate::sourcing::export(&db)? {
+                r = r.meta(k, v);
+            }
+        }
+        r
     };
     if !ctx.quiet() && out.output.is_some() {
         eprintln!("exported {} item(s)", items.len());
