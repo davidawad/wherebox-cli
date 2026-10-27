@@ -23,7 +23,7 @@ pub fn run(ctx: &Ctx, cmd: ListCmd) -> Result<ExitStatus> {
         ListCmd::Check { list, scope, threshold } => {
             return check(ctx, &list, scope.all_profiles, threshold.as_deref())
         }
-        ListCmd::New { name, kind, notes } => new(ctx, &name, &kind, notes.as_deref()),
+        ListCmd::New { name, kind, notes, food } => new(ctx, &name, &kind, notes.as_deref(), food.as_deref()),
         ListCmd::Ls => ls(ctx),
         ListCmd::Show { list } => show(ctx, &list),
         ListCmd::Rm { list } => rm(ctx, Kind::List, &list),
@@ -168,6 +168,7 @@ fn list_header(d: &Doc<ListFile>) -> Value {
         "profile": d.data.profile,
         "notes": d.data.notes,
         "threshold": d.data.threshold,
+        "food": d.data.is_food(),
         "entries": d.data.entries.len(),
         "path": d.path,
     })
@@ -177,12 +178,15 @@ fn list_header(d: &Doc<ListFile>) -> Value {
 // Files: new, ls, show, rm
 // ---------------------------------------------------------------------------
 
-fn new(ctx: &Ctx, name: &str, kind: &str, notes: Option<&str>) -> Result<()> {
+fn new(ctx: &Ctx, name: &str, kind: &str, notes: Option<&str>, food: Option<&str>) -> Result<()> {
     let kind = kind.trim().to_lowercase();
     if kind.is_empty() {
         return Err(AppError::usage("--type must not be empty"));
     }
     let mut fields = vec![("type", value(kind.as_str()))];
+    if let Some(f) = food {
+        fields.push(("food", value(parse_bool_flag(f)?)));
+    }
     let profile =
         (ctx.resolved.source("profile") == crate::config::Source::Flag).then(|| ctx.profile.clone()).flatten();
     if let Some(p) = &profile {
@@ -752,10 +756,13 @@ fn verdict_cell(e: &lists::Eval, tier: lists::Tier) -> Value {
     })
 }
 
-fn explain_rows(inv: &Inventory, r: &Resolved, t: f64) -> Vec<Record> {
+fn explain_rows(inv: &Inventory, r: &Resolved, t: f64, food: bool) -> Vec<Record> {
     let mut rows: Vec<(f64, Record)> = Vec::new();
     for i in 0..inv.items.len() {
-        let e = lists::eval(inv, r, i, t);
+        let all = lists::eval(inv, r, i, t);
+        let mut e = all.clone();
+        lists::gate(inv, &mut e, i, food);
+        let not_food = e.hits.len() < all.hits.len();
         let near = e.best_name.as_ref().is_some_and(|(_, s)| s.score >= 0.5);
         if e.hits.is_empty() && !near && e.excluded.is_none() {
             continue;
@@ -763,6 +770,7 @@ fn explain_rows(inv: &Inventory, r: &Resolved, t: f64) -> Vec<Record> {
         let best = e.best();
         let result = match (best, &e.excluded, e.location_ok) {
             (Some(h), _, _) => h.tier.as_str().to_string(),
+            (None, _, _) if not_food => "not food (food list)".into(),
             (None, Some(x), _) if !e.hits.is_empty() || near => format!("excluded ({x})"),
             (None, _, false) if !e.hits.is_empty() => "elsewhere (at)".into(),
             _ => "below threshold".into(),
@@ -779,14 +787,15 @@ fn explain_rows(inv: &Inventory, r: &Resolved, t: f64) -> Vec<Record> {
                 "identifier": verdict_cell(&e, lists::Tier::Identifier),
                 "url": verdict_cell(&e, lists::Tier::Url),
                 "pinned": verdict_cell(&e, lists::Tier::Pinned),
-                "attribute": verdict_cell(&e, lists::Tier::Attribute),
-                "name": verdict_cell(&e, lists::Tier::Name)
+                "attribute": verdict_cell(&all, lists::Tier::Attribute),
+                "name": verdict_cell(&all, lists::Tier::Name)
                     .as_str()
                     .map(str::to_string)
                     .or_else(|| e.best_name.as_ref().map(|(q, s)| format!("\"{q}\" {:.4} (< {t})", s.score))),
                 "name_score": e.best_name.as_ref().map(|(_, s)| s.score),
                 "excluded": e.excluded,
                 "location_ok": e.location_ok,
+                "food": inv.food[i],
                 "tier": best.map(|h| h.tier.as_str()),
                 "score": score,
                 "via": best.map(|h| h.via.clone()),
@@ -810,7 +819,7 @@ fn explain(ctx: &Ctx, spec: &str, entry: &str, th: Option<&str>) -> Result<()> {
     let list = d.data.clone();
     let (rows, ambiguous) = on_list_db(ctx, &list, false, "list explain", |c, p, db| {
         let inv = inventory(c, p, db)?;
-        Ok((explain_rows(&inv, &r, t), lists::run(&inv, &r, t).1))
+        Ok((explain_rows(&inv, &r, t, list.is_food()), lists::run(&inv, &r, t, list.is_food()).1))
     })?
     .into_iter()
     .next()
@@ -854,7 +863,7 @@ fn import(ctx: &Ctx, spec: &str, file: &std::path::Path, kind: &str) -> Result<(
     let mut d = match load_list(ctx, spec) {
         Ok(d) => d,
         Err(e) if e.kind == crate::error::ErrorKind::NotFound => {
-            new(ctx, spec, kind, None)?;
+            new(ctx, spec, kind, None, None)?;
             load_list(ctx, spec)?
         }
         Err(e) => return Err(e),
@@ -1009,12 +1018,13 @@ pub fn match_cmd(ctx: &Ctx, a: MatchArgs) -> Result<()> {
     let r = lists::resolve_files(config(ctx), &m, query.map(str::to_string), None)?;
     let (rows, ambiguous) = crate::commands::profile::each_db(ctx, false, "match", |c, p, db| {
         let inv = inventory(c, p, db)?;
-        let (found, amb) = lists::run(&inv, &r, t);
+        let (found, amb) = lists::run(&inv, &r, t, false);
         let rows: Vec<Record> = found
             .iter()
             .map(|mt| {
                 let i = mt.idx;
-                let c = lists::contribution(&inv, i, &m.at, inv.items[i].unit.as_deref().unwrap_or("ea"), false);
+                let unit = inv.items[i].unit.as_deref().unwrap_or("ea");
+                let c = lists::contribution(&inv, i, &m.at, unit, false, query.unwrap_or(""));
                 to_record(&json!({
                     "item": inv.items[i].name,
                     "asset_id": inv.items[i].asset_id,

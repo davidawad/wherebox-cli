@@ -78,6 +78,9 @@ pub enum ListCmd {
         kind: String,
         #[arg(long)]
         notes: Option<String>,
+        /// Only food matches by name or attribute (default: true for recipes)
+        #[arg(long, value_name = "BOOL")]
+        food: Option<String>,
     },
     /// Every list, with entry counts (wishlists: open / fulfilled)
     Ls,

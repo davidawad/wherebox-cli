@@ -1,0 +1,204 @@
+# Food lexicon for recipe matching (docs/SPEC.md, "Lists and matching").
+#
+# nouns      words that name food when they are the head noun of a product
+#            name ("Walnuts", "Hemp Seed Organic"); shelf-life type names and
+#            synonyms, and the keys below, count too.
+# synonyms   an entry naming the key also matches items named by any of the
+#            values ("berries" is had by "Frozen Wild Blueberries"). A
+#            shelf-life type's name works the same way with its synonyms.
+# density    grams per millilitre, so volume entries (1 tbsp) count against
+#            items sold by weight (a 12 oz bag) and the other way round.
+# pieces     grams per piece, by unit ("ea" is one of the food), so count
+#            entries (1 clove, 2 limes, 10 cherries) count against items sold
+#            by weight or by the head.
+#
+# Densities and piece weights are rounded from USDA FoodData Central
+# portion weights (SR Legacy household measures, e.g. "1 tbsp", "1 cup",
+# "1 clove", "1 fruit"), https://fdc.nal.usda.gov/. An unknown density or
+# piece weight leaves the entry a unit mismatch: unknown, not missing.
+
+nouns = [
+    "almond", "walnut", "pecan", "cashew", "pistachio", "peanut", "hazelnut", "macadamia", "nut",
+    "seed", "chia", "flaxseed", "quinoa", "oat", "barley", "farro", "couscous", "bulgur",
+    "flour", "sugar", "salt", "peppercorn", "cinnamon", "cumin", "paprika", "turmeric", "oregano", "spice",
+    "rice", "bean", "chickpea", "lentil", "pasta", "spaghetti", "noodle", "macaroni", "penne",
+    "oil", "vinegar", "sauce", "salsa", "chocolate", "cocoa", "cacao", "coffee", "tea", "juice",
+    "honey", "syrup", "molasses", "cereal", "granola", "cracker", "cookie", "pretzel", "popcorn",
+    "raisin", "date", "fig", "prune", "coconut", "broth", "stock", "soup", "yeast", "extract", "vanilla",
+    "gelatin", "cornstarch", "cornmeal", "breadcrumb", "tuna", "sardine", "anchovy", "jerky", "olive",
+    "pickle", "caper", "nutella", "tahini", "miso", "kimchi", "sauerkraut", "seaweed", "nori",
+]
+
+[synonyms]
+berries = ["blueberries", "raspberries", "strawberries", "blackberries", "mixed berries", "cranberries"]
+"nut milk" = ["almond milk", "macadamia milk", "cashew milk", "hazelnut milk", "walnut milk", "pistachio milk"]
+"plant milk" = ["almond milk", "oat milk", "soy milk", "macadamia milk", "cashew milk", "coconut milk beverage"]
+nuts = ["almonds", "walnuts", "pecans", "cashews", "pistachios", "hazelnuts", "macadamia nuts", "brazil nuts", "mixed nuts"]
+"hemp seeds" = ["hemp hearts"]
+scallions = ["green onions"]
+"green onions" = ["scallions"]
+cilantro = ["coriander leaves"]
+"powdered sugar" = ["confectioners sugar", "icing sugar"]
+chickpeas = ["garbanzo beans"]
+"garbanzo beans" = ["chickpeas"]
+"baking soda" = ["sodium bicarbonate"]
+"heavy cream" = ["whipping cream"]
+cornstarch = ["corn starch"]
+"bell pepper" = ["capsicum"]
+zucchini = ["courgette"]
+eggplant = ["aubergine"]
+
+# grams per millilitre
+[density]
+"hemp seeds" = 0.68
+"chia seeds" = 0.81
+"flax seeds" = 0.70
+"ground flaxseed" = 0.47
+"sesame seeds" = 0.61
+"sunflower seeds" = 0.59
+"pumpkin seeds" = 0.55
+almonds = 0.60
+walnuts = 0.49
+pecans = 0.42
+cashews = 0.58
+peanuts = 0.62
+"pine nuts" = 0.58
+pistachios = 0.52
+hazelnuts = 0.57
+"brazil nuts" = 0.56
+"macadamia nuts" = 0.57
+flour = 0.53
+"whole wheat flour" = 0.51
+"almond flour" = 0.47
+"coconut flour" = 0.48
+cornstarch = 0.54
+cornmeal = 0.62
+"cocoa powder" = 0.36
+"cacao nibs" = 0.48
+sugar = 0.85
+"brown sugar" = 0.93
+"powdered sugar" = 0.51
+"coconut sugar" = 0.65
+salt = 1.22
+"kosher salt" = 0.60
+"sea salt" = 1.20
+"olive oil" = 0.91
+"vegetable oil" = 0.92
+"coconut oil" = 0.92
+"sesame oil" = 0.92
+oil = 0.92
+butter = 0.96
+honey = 1.42
+"maple syrup" = 1.32
+molasses = 1.40
+rice = 0.78
+"brown rice" = 0.80
+quinoa = 0.72
+lentils = 0.81
+oats = 0.34
+"rolled oats" = 0.34
+couscous = 0.73
+cinnamon = 0.53
+cumin = 0.43
+paprika = 0.47
+"black pepper" = 0.47
+turmeric = 0.61
+"ground ginger" = 0.37
+"chili powder" = 0.55
+"garlic powder" = 0.63
+"onion powder" = 0.50
+nutmeg = 0.47
+oregano = 0.20
+"baking soda" = 0.93
+"baking powder" = 0.93
+yeast = 0.63
+"vanilla extract" = 0.89
+milk = 1.03
+water = 1.00
+"heavy cream" = 1.01
+yogurt = 1.04
+"peanut butter" = 1.08
+"almond butter" = 1.08
+tahini = 1.02
+breadcrumbs = 0.46
+"shredded coconut" = 0.39
+"chocolate chips" = 0.71
+raisins = 0.61
+"soy sauce" = 1.08
+vinegar = 1.01
+
+# grams per piece
+[pieces.garlic]
+clove = 3
+head = 30
+bulb = 30
+ea = 30
+
+[pieces.lime]
+ea = 67
+
+[pieces.lemon]
+ea = 84
+
+[pieces.orange]
+ea = 131
+
+[pieces.cherries]
+ea = 8
+
+[pieces."brazil nuts"]
+ea = 5
+
+[pieces.almonds]
+ea = 1.2
+
+[pieces.dates]
+ea = 7
+
+[pieces.eggs]
+ea = 50
+
+[pieces.banana]
+ea = 118
+
+[pieces.avocado]
+ea = 150
+
+[pieces.apple]
+ea = 182
+
+[pieces.onion]
+ea = 110
+
+[pieces.shallot]
+ea = 25
+
+[pieces.potato]
+ea = 213
+
+[pieces.tomato]
+ea = 123
+
+[pieces.carrot]
+ea = 61
+
+[pieces.celery]
+stalk = 40
+ea = 450
+
+[pieces.jalapeno]
+ea = 14
+
+[pieces.strawberries]
+ea = 12
+
+[pieces.scallions]
+ea = 15
+bunch = 100
+
+[pieces.ginger]
+inch = 11
+ea = 100
+
+[pieces.butter]
+stick = 113

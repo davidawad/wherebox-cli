@@ -14,7 +14,8 @@ use toml_edit::{value, Array, ArrayOfTables, DocumentMut, Item as TItem, Table};
 
 use crate::db::Db;
 use crate::error::{AppError, Result};
-use crate::matching::{self, NameScore, Ranked, UrlKey};
+use crate::food::Lexicon;
+use crate::matching::{self, NameScore, Ranked, Segment, UrlKey};
 use crate::onhand::{Estimates, Estimator};
 use crate::store::{self, Item, Lot, Tree};
 
@@ -139,6 +140,10 @@ pub struct ListFile {
     pub notes: Option<String>,
     #[serde(default, deserialize_with = "number")]
     pub threshold: Option<f64>,
+    /// Only food is a candidate (identifiers and pins aside); default: true
+    /// for recipes.
+    #[serde(default)]
+    pub food: Option<bool>,
     #[serde(default, rename = "entry")]
     pub entries: Vec<Entry>,
 }
@@ -154,6 +159,11 @@ impl ListFile {
     /// Kits and packing lists need the thing here: lent items don't count.
     pub fn needs_present(&self) -> bool {
         matches!(self.kind.to_ascii_lowercase().as_str(), "kit" | "packing")
+    }
+    /// Food lists only match food by name or attribute: the `food` key, else
+    /// true for recipes.
+    pub fn is_food(&self) -> bool {
+        self.food.unwrap_or_else(|| self.kind.eq_ignore_ascii_case("recipe"))
     }
 }
 
@@ -511,9 +521,14 @@ pub struct Inventory {
     pub tree: Tree,
     /// Computed expiry and estimated on hand (see [`crate::onhand`]).
     pub est: Estimates,
+    /// Is each item food (candidates of food lists)?
+    pub food: Vec<bool>,
+    /// Food nouns, synonyms, densities and piece weights.
+    pub lex: Lexicon,
     ids: Vec<BTreeSet<String>>,
     urls: Vec<Vec<UrlKey>>,
     tokens: Vec<Vec<String>>,
+    segments: Vec<Vec<Segment>>,
 }
 
 impl Inventory {
@@ -532,7 +547,33 @@ impl Inventory {
             items.iter().map(|i| fields.remove(&i.id).unwrap_or_default()).collect();
         let labels: Vec<Vec<String>> = items.iter().map(|i| labels.remove(&i.id).unwrap_or_default()).collect();
         let lots: Vec<Vec<Lot>> = items.iter().map(|i| lots.remove(&i.id).unwrap_or_default()).collect();
-        Ok(Self::new(profile, today, items, fields, labels, lots, tree, est))
+        let lex = Lexicon::new(&estimator.types);
+        let food = items
+            .iter()
+            .zip(&fields)
+            .zip(&labels)
+            .zip(&lots)
+            .map(|(((i, f), l), lots)| {
+                let storage = |loc| crate::shelf_life::Storage::of_location(&tree, loc).is_some();
+                let signals = crate::food::ItemSignals {
+                    name: &i.name,
+                    preset_category: i
+                        .kind_preset
+                        .as_deref()
+                        .and_then(|p| estimator.catalog.get(p))
+                        .map(|p| p.category.as_str()),
+                    kind: crate::consumable::field(Some(f), crate::consumable::KIND_FIELD),
+                    labels: l,
+                    shelf_life: est.get(&i.id).is_some_and(|v| v.shelf_life.is_some()),
+                    food_place: storage(i.location_id) || lots.iter().any(|l| l.is_active() && storage(l.location_id)),
+                };
+                crate::food::is_food(&signals, &lex)
+            })
+            .collect();
+        let mut inv = Self::new(profile, today, items, fields, labels, lots, tree, est);
+        inv.food = food;
+        inv.lex = lex;
+        Ok(inv)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -575,7 +616,10 @@ impl Inventory {
             })
             .collect();
         let tokens = items.iter().map(|i| matching::name_tokens(&i.name)).collect();
-        Self { profile, today, items, fields, labels, lots, tree, est, ids, urls, tokens }
+        let segments = items.iter().map(|i| matching::segments(&i.name)).collect();
+        let food = vec![true; items.len()];
+        let lex = Lexicon::default();
+        Self { profile, today, items, fields, labels, lots, tree, est, food, lex, ids, urls, tokens, segments }
     }
 
     /// Lower-case location names of an item location, root first.
@@ -700,6 +744,32 @@ impl Eval {
     }
 }
 
+/// The fuzzy score of a name query against item `i`: token-set similarity,
+/// held below any threshold (0.5) unless the query's head noun is in the
+/// item's name as the head noun of a segment (`garlic` in `Chili Garlic
+/// Sauce` is a flavour, not the product); a synonym phrase (`berries`:
+/// `blueberries`) naming the item's head noun scores 0.95 of its head match.
+/// Returns the synonym used, if any.
+pub fn name_score(inv: &Inventory, q: &str, i: usize) -> (NameScore, Option<String>) {
+    let qt = matching::name_tokens(q);
+    let mut s = matching::score_tokens(&qt, &inv.tokens[i]);
+    let segs = &inv.segments[i];
+    let head = matching::head_match(&qt, segs);
+    if head.score < 0.6 && s.score > 0.5 {
+        s = NameScore { score: 0.5, full: false };
+    }
+    let mut via = None;
+    for syn in inv.lex.synonyms(&qt) {
+        let h = matching::head_match(syn, segs);
+        let score = ((h.score * 0.95) * 1e4).round() / 1e4;
+        if h.score >= crate::shelf_life::CLASSIFY_THRESHOLD && score > s.score {
+            s = NameScore { score, full: true };
+            via = Some(syn.join(" "));
+        }
+    }
+    (s, via)
+}
+
 fn add_name(e: &mut Eval, q: &str, s: NameScore) {
     if e.best_name.as_ref().is_none_or(|(_, b)| s.score > b.score) {
         e.best_name = Some((q.to_string(), s));
@@ -768,13 +838,16 @@ pub fn eval(inv: &Inventory, r: &Resolved, i: usize, threshold: f64) -> Eval {
     // e. names
     let own = r.own_name.iter().map(|n| (n, "name"));
     for (q, what) in own.chain(m.any.iter().map(|n| (n, "any"))) {
-        let s = matching::score_tokens(&matching::name_tokens(q), &inv.tokens[i]);
+        let (s, syn) = name_score(inv, q, i);
         add_name(&mut e, q, s);
         if s.score >= threshold {
             e.hits.push(Hit {
                 tier: Tier::Name,
                 score: s.score,
-                via: format!("{what} \"{q}\""),
+                via: match syn {
+                    Some(syn) => format!("{what} \"{q}\" (as {syn})"),
+                    None => format!("{what} \"{q}\""),
+                },
                 query: Some(q.clone()),
                 full: s.full,
             });
@@ -803,11 +876,23 @@ pub struct MatchedItem {
     pub product_ref: Option<String>,
 }
 
+/// Hits a food list keeps for a non-food item: identifiers, URLs and pins.
+pub fn gate(inv: &Inventory, e: &mut Eval, i: usize, food: bool) {
+    if food && !inv.food[i] {
+        e.hits.retain(|h| matches!(h.tier, Tier::Identifier | Tier::Url | Tier::Pinned));
+    }
+}
+
 /// Every item a matcher matches (best hit each, best first) and whether the
 /// fuzzy part is ambiguous (only when nothing matched above the name tier).
-pub fn run(inv: &Inventory, r: &Resolved, threshold: f64) -> (Vec<Match>, bool) {
+/// `food`: only food items match by attribute or name.
+pub fn run(inv: &Inventory, r: &Resolved, threshold: f64, food: bool) -> (Vec<Match>, bool) {
     let mut out: Vec<Match> = (0..inv.items.len())
-        .filter_map(|i| eval(inv, r, i, threshold).best().map(|h| Match { idx: i, hit: h.clone(), item: None }))
+        .filter_map(|i| {
+            let mut e = eval(inv, r, i, threshold);
+            gate(inv, &mut e, i, food);
+            e.best().map(|h| Match { idx: i, hit: h.clone(), item: None })
+        })
         .collect();
     out.sort_by(|a, b| {
         a.hit
@@ -860,13 +945,27 @@ pub struct Contribution {
 /// states a pack count (`12-Pack`, `90 Count`) holds that many of an inner
 /// unit (`can`, `capsule`). An item counted in `ea`/`pack` whose name states a
 /// size (`16 oz`) holds that much of a mass or volume.
-fn in_unit(qty: f64, unit: &str, name: &str, want: &str) -> (Option<f64>, &'static str) {
+fn in_unit(
+    qty: f64,
+    unit: &str,
+    name: &str,
+    want: &str,
+    food: Option<&crate::food::Facts>,
+) -> (Option<f64>, &'static str) {
     let count = |u: &str| matches!(matching::unit_info(u), Some((matching::Dim::Count, _)));
     let outer = |u: &str| matches!(u, "ea" | "pack");
     let want_c = matching::canonical_unit(want);
     if outer(unit) && count(&want_c) && !outer(&want_c) {
         if let Some(n) = matching::pack_count_from_name(name) {
             return (Some(qty * n), "pack count from name");
+        }
+    }
+    // `10 cherries` against `Bing Cherries, 2 lb` counted in `ea`: pieces
+    // of the food, not bags.
+    let sized = || matching::size_from_name(name).is_some();
+    if let Some(f) = food.filter(|_| count(unit) && count(&want_c) && sized()) {
+        if let (Some(g), Some(per)) = (f.item_grams(qty, unit, name), f.grams_per(&want_c)) {
+            return (Some(g / per), "piece weight");
         }
     }
     if let Some(q) = matching::convert(qty, unit, want) {
@@ -879,11 +978,34 @@ fn in_unit(qty: f64, unit: &str, name: &str, want: &str) -> (Option<f64>, &'stat
             }
         }
     }
+    // Volume to mass and pieces through the food's density and piece weights.
+    if let Some(f) = food {
+        if let (Some(g), Some(per)) = (f.item_grams(qty, unit, name), f.grams_per(&want_c)) {
+            let mass_or_volume =
+                |u: &str| matches!(matching::unit_info(u), Some((matching::Dim::Mass | matching::Dim::Volume, _)));
+            let basis = if mass_or_volume(&want_c) && (mass_or_volume(unit) || matching::size_from_name(name).is_some())
+            {
+                "density"
+            } else {
+                "piece weight"
+            };
+            return (Some(g / per), basis);
+        }
+    }
     (None, "unit mismatch")
 }
 
-pub fn contribution(inv: &Inventory, i: usize, at: &[String], want_unit: &str, present_only: bool) -> Contribution {
+pub fn contribution(
+    inv: &Inventory,
+    i: usize,
+    at: &[String],
+    want_unit: &str,
+    present_only: bool,
+    entry: &str,
+) -> Contribution {
     let item = &inv.items[i];
+    let food = inv.lex.facts(entry).or_else(|| inv.lex.facts(&item.name));
+    let in_unit = |q: f64, u: &str, n: &str, w: &str| in_unit(q, u, n, w, food);
     let unit = item.unit.as_deref().map_or_else(|| "ea".to_string(), matching::canonical_unit);
     let lots = &inv.lots[i];
     if lots.is_empty() {
@@ -962,13 +1084,13 @@ pub struct EntryCheck {
 
 pub fn check_entry(inv: &Inventory, list: &ListFile, entry: &Entry, r: &Resolved, threshold: f64) -> EntryCheck {
     let threshold = entry.m.threshold.or(list.threshold).unwrap_or(threshold);
-    let (found, ambiguous) = run(inv, r, threshold);
+    let (found, ambiguous) = run(inv, r, threshold, list.is_food());
     let unit = entry.unit();
     let want = entry.want();
     let matches: Vec<(Match, Contribution)> = found
         .into_iter()
         .map(|m| {
-            let c = contribution(inv, m.idx, &entry.m.at, &unit, list.needs_present());
+            let c = contribution(inv, m.idx, &entry.m.at, &unit, list.needs_present(), &entry.name);
             (m, c)
         })
         .collect();
@@ -1322,25 +1444,25 @@ qty = 0.5
     #[test]
     fn count_units_compare_as_counts() {
         // `1 can albacore tuna` against a single can counted in `ea`
-        assert_eq!(in_unit(1.0, "ea", "Albacore Tuna in Water, 5 oz", "can"), (Some(1.0), "unit"));
-        assert_eq!(in_unit(3.0, "jar", "Cocoa powder", "ea"), (Some(3.0), "unit"));
-        assert_eq!(in_unit(1.0, "jar", "Cocoa powder", "tbsp"), (None, "unit mismatch"));
+        assert_eq!(in_unit(1.0, "ea", "Albacore Tuna in Water, 5 oz", "can", None), (Some(1.0), "unit"));
+        assert_eq!(in_unit(3.0, "jar", "Cocoa powder", "ea", None), (Some(3.0), "unit"));
+        assert_eq!(in_unit(1.0, "jar", "Cocoa powder", "tbsp", None), (None, "unit mismatch"));
     }
 
     #[test]
     fn pack_counts_multiply_inner_units() {
         let tuna = "StarKist Solid White Albacore Tuna in Water, 5 oz Can, 12-Pack";
-        assert_eq!(in_unit(1.0, "ea", tuna, "can"), (Some(12.0), "pack count from name"));
-        assert_eq!(in_unit(2.0, "pack", tuna, "cans"), (Some(24.0), "pack count from name"));
+        assert_eq!(in_unit(1.0, "ea", tuna, "can", None), (Some(12.0), "pack count from name"));
+        assert_eq!(in_unit(2.0, "pack", tuna, "cans", None), (Some(24.0), "pack count from name"));
         // the outer unit is not multiplied
-        assert_eq!(in_unit(1.0, "ea", tuna, "ea"), (Some(1.0), "unit"));
-        assert_eq!(in_unit(1.0, "ea", tuna, "pack"), (Some(1.0), "unit"));
+        assert_eq!(in_unit(1.0, "ea", tuna, "ea", None), (Some(1.0), "unit"));
+        assert_eq!(in_unit(1.0, "ea", tuna, "pack", None), (Some(1.0), "unit"));
         // nor is an item already counted in the inner unit
-        assert_eq!(in_unit(12.0, "can", tuna, "can"), (Some(12.0), "unit"));
+        assert_eq!(in_unit(12.0, "can", tuna, "can", None), (Some(12.0), "unit"));
         // mass still goes by the size the name states
-        assert_eq!(in_unit(1.0, "ea", tuna, "oz"), (Some(5.0), "size from name"));
+        assert_eq!(in_unit(1.0, "ea", tuna, "oz", None), (Some(5.0), "size from name"));
         let fish_oil = "Nature Made Fish Oil 1200 mg Softgels, 90 Count";
-        assert_eq!(in_unit(1.0, "ea", fish_oil, "capsule"), (Some(90.0), "pack count from name"));
-        assert_eq!(in_unit(1.0, "ea", "Vitamin D3 capsules", "capsule"), (Some(1.0), "unit"));
+        assert_eq!(in_unit(1.0, "ea", fish_oil, "capsule", None), (Some(90.0), "pack count from name"));
+        assert_eq!(in_unit(1.0, "ea", "Vitamin D3 capsules", "capsule", None), (Some(1.0), "unit"));
     }
 }

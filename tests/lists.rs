@@ -247,7 +247,8 @@ fn ambiguity_pins_and_explain() {
     let e = Env::pinned();
     seed(&e);
     run(&e, &["add", "Lindt Dark Chocolate Bar 70%", "--at", "Kitchen / Pantry"]);
-    run(&e, &["add", "Ghirardelli Dark Chocolate Chunks", "--at", "Kitchen / Pantry"]);
+    run(&e, &["add", "Nestle Milk Chocolate Chips", "--at", "Kitchen / Pantry"]);
+    run(&e, &["add", "Ghirardelli Semi-Sweet Chocolate Chips", "--at", "Kitchen / Pantry"]);
     run(&e, &["list", "new", "Cookies"]);
     run(&e, &["list", "add", "cookies", "dark chocolate chips", "--threshold", "0.6"]);
     let out = e.out(&["list", "check", "cookies", "--json"]);
@@ -255,14 +256,17 @@ fn ambiguity_pins_and_explain() {
     let v: Value = serde_json::from_slice(&out.stdout).unwrap();
     let c = row(&v, "entry", "dark chocolate chips");
     assert_eq!((c["state"].as_str(), c["ambiguous"].as_bool()), (Some("ambiguous"), Some(true)), "{c}");
+    let names: Vec<&str> = c["matches"].as_array().unwrap().iter().map(|m| m["item"].as_str().unwrap()).collect();
+    assert!(!names.contains(&"Lindt Dark Chocolate Bar 70%"), "a bar is not chips: {names:?}");
     let x = json(&e, &["list", "explain", "cookies", "1"]);
     assert_eq!(x["kind"], "explain");
     assert_eq!(x["ambiguous"], true);
-    let bar = row(&x, "item", "Lindt Dark Chocolate Bar 70%");
-    assert_eq!(bar["result"], "name");
-    assert!(bar["identifier"].is_null() && bar["pinned"].is_null());
+    let chips = row(&x, "item", "Nestle Milk Chocolate Chips");
+    assert_eq!(chips["result"], "name");
+    assert!(chips["identifier"].is_null() && chips["pinned"].is_null());
+    assert_eq!(row(&x, "item", "Lindt Dark Chocolate Bar 70%")["result"], "below threshold");
     // pinning one resolves it (no ASIN or ref: stored as profile + item id)
-    run(&e, &["list", "pin", "cookies", "1", "Ghirardelli Dark Chocolate Chunks"]);
+    run(&e, &["list", "pin", "cookies", "1", "Ghirardelli Semi-Sweet Chocolate Chips"]);
     let v = json(&e, &["list", "check", "cookies"]);
     let c = row(&v, "entry", "dark chocolate chips");
     assert_eq!(c["state"], "have", "{c}");
