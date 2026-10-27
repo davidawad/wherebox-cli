@@ -165,18 +165,39 @@ HB.import_ref,HB.location,HB.label,HB.quantity,HB.name,HB.asset_id,HB.descriptio
 
 ## Install
 
-From source (fsqlite needs a nightly toolchain on x86_64 and on Windows, see
-[Build](#build); aarch64 builds on stable):
+**Homebrew** (macOS and Linux, prebuilt; the formula is published from 0.2.0
+on):
+
+```sh
+brew install davidawad/tap/wherebox
+```
+
+**Release archives.** Every [release](https://github.com/davidawad/wherebox-cli/releases)
+has `wherebox-<version>-<target>.tar.gz` for `x86_64-unknown-linux-gnu`,
+`aarch64-unknown-linux-gnu`, `x86_64-apple-darwin` and `aarch64-apple-darwin`
+(plus a `.zip` for `x86_64-pc-windows-msvc`), and a `SHA256SUMS` file. Each
+archive holds the `wherebox` binary, man pages (`man/`) and shell completions
+(`completions/`). (0.1.0 used `wherebox-cli-v0.1.0-<target>.tar.gz`, without
+man pages or completions.)
+
+```sh
+v=0.2.0 t=aarch64-apple-darwin   # the release you want, and your target
+curl -LO https://github.com/davidawad/wherebox-cli/releases/download/v$v/wherebox-$v-$t.tar.gz
+curl -LO https://github.com/davidawad/wherebox-cli/releases/download/v$v/SHA256SUMS
+sha256sum --ignore-missing -c SHA256SUMS     # macOS: shasum -a 256 --ignore-missing -c SHA256SUMS
+tar xzf wherebox-$v-$t.tar.gz && install wherebox-$v-$t/wherebox ~/.local/bin/
+```
+
+**From source** (fsqlite needs a nightly toolchain on x86_64 and on Windows,
+see [Build](#build); aarch64 builds on stable):
 
 ```sh
 cargo +nightly install --locked --git https://github.com/davidawad/wherebox-cli   # x86_64, Windows
 cargo install --locked --git https://github.com/davidawad/wherebox-cli            # aarch64
 ```
 
-The release workflow attaches prebuilt archives for Linux (x86_64, aarch64),
-macOS (Apple Silicon, Intel) and Windows (x86_64), each with a `.sha256`
-file, to every tagged release. See [docs/platforms.md](docs/platforms.md) for
-what differs per OS (key storage, file locations, permissions).
+See [docs/platforms.md](docs/platforms.md) for what differs per OS (key
+storage, file locations, permissions).
 
 ## Build
 
@@ -563,6 +584,7 @@ cargo clippy --all-targets -- -D warnings
 cargo test        # unit tests + assert_cmd integration tests
 just test-gate    # all three, as run before merging
 just readme       # regenerate the README session
+just release 0.2.0   # cut a release, see docs/releasing.md
 WHEREBOX_BLESS=1 cargo test --test homebox --test formats   # rewrite golden files
 ```
 

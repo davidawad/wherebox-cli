@@ -1,9 +1,12 @@
 # Platforms
 
-wherebox-cli supports five targets. CI (`.github/workflows/ci.yml`) runs
-`cargo fmt --check`, `cargo clippy --all-targets -D warnings` and `cargo test`
-on each of them, and `.github/workflows/release.yml` builds the release
-archives on the same runners.
+wherebox-cli supports five targets. CI runs `cargo fmt --check`,
+`cargo clippy --all-targets -D warnings` and `cargo test` on them:
+`.github/workflows/ci.yml` on every push and pull request to `master`
+(`ubuntu-latest` on nightly, `macos-latest` on stable),
+`.github/workflows/ci-full.yml` on all five (by hand, on version tags and
+weekly). `.github/workflows/release.yml` builds the release archives on the
+runners below (see [releasing.md](releasing.md)).
 
 | target | CI runner | toolchain | release archive |
 |--------|-----------|-----------|-----------------|
