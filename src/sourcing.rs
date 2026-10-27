@@ -1022,7 +1022,7 @@ pub fn import(db: &Db, envelope: &Json) -> Result<Imported> {
             Some(Json::Null) | None => None,
             Some(x) => Some(crate::util::parse_money(&jtext(&json!({"p": x}), "p").unwrap_or_default())?),
         };
-        let store_id = jtext(v, "store");
+        let store_id = jtext(v, "store_id").or_else(|| jtext(v, "store"));
         let mut p = Product {
             id: v.get("id").and_then(Json::as_i64).unwrap_or(0),
             food_key: food_key(&food),
@@ -1097,7 +1097,16 @@ mod tests {
 
     #[test]
     fn section_guess_table() {
-        let cases: &[(Option<&str>, Option<&str>, Option<&str>, Option<&str>, &str, &str)] = &[
+        // (category, url, name, food, section, basis)
+        type Case = (
+            Option<&'static str>,
+            Option<&'static str>,
+            Option<&'static str>,
+            Option<&'static str>,
+            &'static str,
+            &'static str,
+        );
+        let cases: &[Case] = &[
             (Some("Pantry > Nut Butters"), None, Some("Creamy Almond Butter"), None, "pantry", "category"),
             (Some("Dairy & Eggs"), None, Some("Whole Milk"), None, "dairy", "category"),
             (Some("Frozen > Fruit"), None, None, None, "frozen", "category"),

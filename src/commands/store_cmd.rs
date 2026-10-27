@@ -425,9 +425,11 @@ pub fn source(ctx: &Ctx, cmd: SourceCmd) -> Result<()> {
                     "aisle" => p.aisle = None,
                     "note" | "notes" => p.notes = None,
                     "item" => p.item_id = None,
-                    other => return Err(AppError::usage(format!(
+                    other => {
+                        return Err(AppError::usage(format!(
                         "cannot clear '{other}' (brand, size, price, url, sku, plu, upc, section, aisle, note, item)"
-                    ))),
+                    )))
+                    }
                 }
             }
             p.updated_at = now_iso();

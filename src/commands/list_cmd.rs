@@ -792,7 +792,7 @@ fn route(ctx: &Ctx, p: Option<&Profile>, db: &Db, list: &ListFile, store: Option
 fn route_text(list: &ListFile, routes: &[Route]) -> String {
     let mut out = String::new();
     for r in routes {
-        let who = r.profile.as_ref().map(|p| format!("{}: ", p.name)).unwrap_or_default();
+        let who = r.profile.as_ref().filter(|_| routes.len() > 1).map(|p| format!("{}: ", p.name)).unwrap_or_default();
         let layout = match r.layout_source {
             "chain" => "layout: chain",
             "store" => "layout: store",
@@ -818,18 +818,19 @@ fn route_text(list: &ListFile, routes: &[Route]) -> String {
                 p => format!("{name} ({p})"),
             }
         };
+        let aisle = |r: &Record| match s(r, "aisle") {
+            a if a.is_empty() => String::new(),
+            a => format!("aisle {a}"),
+        };
         let wq = r.rows.iter().map(|x| qty(x).chars().count()).max().unwrap_or(0);
         let ww = r.rows.iter().map(|x| what(x).chars().count()).max().unwrap_or(0);
+        let wa = r.rows.iter().map(|x| aisle(x).chars().count()).max().unwrap_or(0);
         let mut group = String::new();
         for x in &r.rows {
             if s(x, "group") != group {
                 group = s(x, "group");
                 out.push_str(&format!("{group}\n"));
             }
-            let aisle = match s(x, "aisle") {
-                a if a.is_empty() => String::new(),
-                a => format!("aisle {a}"),
-            };
             let mut note = s(x, "source_note");
             if x.get("source_id").is_none_or(Value::is_null) {
                 note = s(x, "buy");
@@ -838,11 +839,11 @@ fn route_text(list: &ListFile, routes: &[Route]) -> String {
                 note = if note.is_empty() { at } else { format!("{at}; {note}") };
             }
             let line = format!(
-                "{:>4}. {:<wq$}  {:<ww$}  {:<9} {note}",
+                "{:>4}. {:<wq$}  {:<ww$}  {:<wa$}  {note}",
                 x.get("step").and_then(Value::as_u64).unwrap_or(0),
                 qty(x),
                 what(x),
-                aisle
+                aisle(x)
             );
             out.push_str(line.trim_end());
             out.push('\n');
