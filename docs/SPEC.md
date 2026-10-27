@@ -586,7 +586,8 @@ wherebox store ls [--chain C]
 wherebox store show <store>
 wherebox store edit <store> [--chain --name --address --website --notes --layout L] [--clear FIELD]
 wherebox store rm <store> [--force]          # --force also removes the store's own products
-wherebox store layout [<store> | --chain C] [L] [--clear]   # show, or set, a layout
+wherebox store layout <store> [L] [--clear]       # show, or set, a store's own layout
+wherebox store layout --chain <chain> [L] [--clear]  # a chain's default layout
 wherebox store use <store>... [-P P]         # the profile's stores, first = default
 ```
 

@@ -367,7 +367,7 @@ wherebox list new "Nutty pudding" --type recipe -P beach-house   # default profi
 wherebox list import nutty-pudding recipe.txt                # "200 g walnuts", "3 eggs", URLs
 wherebox list add nutty-pudding nuts --qty 300 --unit g --cohort nuts --optional
 wherebox list check nutty-pudding && echo ready              # exit 0 ready, 3 not ready
-wherebox list shop nutty-pudding                             # the shortfall, as shopping rows
+wherebox list shop nutty-pudding                             # the shortfall, as a walk through the store
 wherebox shopping --include-list nutty-pudding
 wherebox list explain nutty-pudding walnuts                  # why it matched (or didn't)
 wherebox list pin nutty-pudding walnuts 000-012              # confirm a match
@@ -394,6 +394,46 @@ and for common foods through densities and piece weights (`1 tbsp hemp
 seeds` against a 12 oz bag, `1 clove garlic` against a head); lots presumed
 used up are reported, not counted.
 Details: docs/SPEC.md, "Lists and matching".
+
+## Stores and the shopping route
+
+Most groceries come from physical chains, not Amazon. Each property's
+database knows the stores near it and what they sell, so a list check says
+what to buy, where, and in what order to walk the store:
+
+```sh
+wherebox -P beach-house store add sunfield-north --chain "Sunfield Market" --name "Sunfield North"
+wherebox -P beach-house store layout --chain "Sunfield Market" "produce=1, bulk=2, pantry=3-7, dairy=11, frozen, checkout"
+wherebox -P beach-house store use sunfield-north           # the profile's stores, default first
+wherebox -P beach-house source add walnuts --store sunfield-north --name "Raw Walnuts" \
+    --section bulk --aisle "bins 2" --note "top row by the almonds" --price 8.99
+wherebox -P beach-house source add limes --chain "Sunfield Market" --name "Organic Limes"   # section guessed: produce
+wherebox -P beach-house list check nutty-pudding             # missing entries: where to buy them
+wherebox -P beach-house list shop nutty-pudding [--store S]  # a numbered walk, by section and aisle
+```
+
+```console
+Nutty pudding at Sunfield North (sunfield-north), layout: chain
+Produce
+   1. 2 ea   Organic Limes  aisle 1
+Bulk
+   2. 200 g  Raw Walnuts    aisle bins 2  top row by the almonds
+Ask / unsorted
+   3. 1 tsp  cardamom                     no source at Sunfield North
+```
+
+A store product (`source add`) is for a food (a list entry name, a food
+noun) at one store or every store of a chain; an entry gets the product at
+the profile's store, else its chain's, else another store's (said so).
+Sections come from a fixed vocabulary (produce, bulk, meat, seafood, deli,
+bakery, dairy, eggs, frozen, pantry, canned, baking, spices, oils-vinegar,
+snacks, beverages, supplements, household, health-beauty, checkout,
+special-buys) plus custom ones; without `--section` one is guessed from
+`--category` text, the URL or the name, offline. Layouts default to a
+generic produce-first, frozen-last order; set one per chain once. `lot add
+--vendor STORE` records where a lot was bought. Stores and products travel
+in JSON exports (`export -f json`, `import`), not in Homebox CSV.
+Details: docs/SPEC.md, "Stores and sourcing".
 
 ## Homebox CSV
 
@@ -511,8 +551,10 @@ data cannot be recovered.
 | `par ITEM N [--reorder Q]` | keep at least N on hand (`none` clears it) |
 | `shopping [--all-profiles] [--within 7d] [--since 18] [--checklist] [--include-list L]` | what to buy: below par, expiring par items, learned reorders, list shortfalls |
 | `list new\|ls\|show\|rm\|add\|edit\|drop\|import` | lists: recipes, kits, packing lists, wishlists |
-| `list check\|shop\|explain\|pin\|unpin LIST` | have it? (exit 3 when not ready), what to buy, why it matched, confirm a match |
+| `list check\|shop\|explain\|pin\|unpin LIST` | have it? (exit 3 when not ready), what to buy and where (a walk through the store), why it matched, confirm a match |
 | `cohort new\|ls\|show\|add\|rm` | named, reusable matchers (`nuts` = walnuts, pecans, label nuts) |
+| `store add\|ls\|show\|edit\|rm\|layout\|use` | stores near a property, their layouts, the profile's stores |
+| `source add\|ls\|edit\|rm` | store products: where to buy a food, section, aisle, notes |
 | `match [QUERY] [--asin --upc --url ...]` | the matching ladder over a profile, without a list |
 | `report insurance [--all-profiles] [--owner O] [--min-value N] [--bought-after DATE] -f csv\|xlsx\|html\|pdf` | insurance inventory with totals and gaps |
 | `report warranties [--expiring 90d] [--all-profiles]` | warranties ending soon |
@@ -600,9 +642,13 @@ SQLite schema, managed by versioned migrations in `src/migrations.rs`:
   `sources(item_id, source, ref)`
 * `events(item_id, at, kind, detail)`: append-only history
 * `lots(id, item_id, qty, acquired_at, opened_at, best_by (printed),
-  frozen_at, confirmed_at, location_id, status sealed|open|consumed|discarded)`
-  (expiry is computed, never stored) and
+  frozen_at, confirmed_at, location_id, status sealed|open|consumed|discarded,
+  vendor)` (expiry is computed, never stored) and
   `consumption(lot_id, qty, at, reason eaten|used|spoiled|discarded)`
+* `stores(id, chain, name, address, website, notes, layout)`,
+  `chain_layouts(chain, layout)` and `store_products(food, store_id | chain,
+  name, brand, size, price, price_seen, url, sku, plu, upc, section, aisle,
+  notes, item_id)`: where to buy what, per property
 * `import_batches`
 
 Kind presets are TOML files (`presets/kinds/`, compiled in; overrides in
