@@ -1,4 +1,4 @@
-# Optional full matrix; the fast default is ci.yml.
+# Optional full matrix; the default on push/PR is ci.yml (Linux x86_64, macOS arm64).
 # fmt, clippy and the full test suite on every supported platform.
 #
 # Toolchains: fsqlite 0.4 needs nightly on x86_64 and on Windows (see
@@ -7,7 +7,7 @@
 name: CI full matrix
 
 on:
-  # Optional: the slow cross-platform matrix. Push/PR runs ci.yml (one fast job).
+  # Optional: the slow cross-platform matrix. Push/PR runs ci.yml.
   workflow_dispatch:
   push:
     tags: ["v*"]

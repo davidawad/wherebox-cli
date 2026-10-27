@@ -1,16 +1,17 @@
-# Fast default CI: fmt, clippy -D warnings and tests on one runner, in minutes.
+# Default CI: fmt, clippy -D warnings and tests on Linux and macOS.
 #
-# aarch64 Linux builds fsqlite on stable Rust (no nightly needed there), and
-# rust-cache keeps dependency builds warm. The slow cross-platform matrix
-# (Windows, macOS x86_64/arm64, nightly x86_64) lives in ci-full.yml: run it by
-# hand (Actions > CI full matrix > Run workflow, or `gh workflow run ci-full.yml`);
-# it also runs on version tags and weekly.
+# Toolchains follow docs/platforms.md: fsqlite 0.4 needs nightly on x86_64
+# (ubuntu-latest), while Apple Silicon (macos-latest) builds on stable.
+# RUSTUP_TOOLCHAIN overrides rust-toolchain.toml per job. The remaining targets
+# (aarch64 Linux, Intel macOS, Windows) run in ci-full.yml, by hand
+# (`gh workflow run ci-full.yml`), on version tags and weekly.
 name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
+    branches: [master]
   workflow_dispatch:
 
 permissions:
@@ -22,19 +23,28 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTUP_TOOLCHAIN: stable
 
 jobs:
   test:
-    name: linux-aarch64 (stable)
-    runs-on: ubuntu-24.04-arm
+    name: ${{ matrix.os }} (${{ matrix.toolchain }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest # x86_64
+            toolchain: nightly
+          - os: macos-latest # Apple Silicon
+            toolchain: stable
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.toolchain }}
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust stable
-        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt
+      - name: Install Rust ${{ matrix.toolchain }}
+        run: rustup toolchain install ${{ matrix.toolchain }} --profile minimal --component clippy,rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
-          key: stable
+          key: ${{ matrix.toolchain }}
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo test --locked --no-fail-fast
