@@ -933,6 +933,141 @@ pub fn product_place(p: &Product, stores: &Stores) -> String {
         .unwrap_or_default()
 }
 
+// ---------------------------------------------------------------------------
+// Export and import (the `wherebox/v1` envelope's `stores`, `chain_layouts`
+// and `store_products`)
+// ---------------------------------------------------------------------------
+
+/// A product as exported: every column, the price in dollars.
+pub fn export_product(p: &Product) -> Json {
+    let mut v = serde_json::to_value(p).unwrap_or(Json::Null);
+    if let Json::Object(m) = &mut v {
+        m.remove("food_key");
+        m.insert("price".into(), json!(p.price.map(crate::util::money_value)));
+    }
+    v
+}
+
+/// The envelope fields of an export.
+pub fn export(db: &Db) -> Result<Vec<(&'static str, Json)>> {
+    let layouts: Vec<Json> = chain_layouts(db)?.into_iter().map(|(c, l)| json!({"chain": c, "layout": l})).collect();
+    Ok(vec![
+        ("stores", json!(all_stores(db)?)),
+        ("chain_layouts", json!(layouts)),
+        ("store_products", json!(all_products(db)?.iter().map(export_product).collect::<Vec<_>>())),
+    ])
+}
+
+/// What an import did with stores and products.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
+pub struct Imported {
+    pub stores: usize,
+    pub chain_layouts: usize,
+    pub store_products: usize,
+}
+
+fn jtext(v: &Json, k: &str) -> Option<String> {
+    match v.get(k) {
+        Some(Json::String(s)) => Some(s.trim().to_string()).filter(|s| !s.is_empty()),
+        Some(Json::Number(n)) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+fn natural_key(p: &Product) -> (String, Option<String>, Option<String>, String) {
+    (p.food_key.clone(), p.store_id.clone(), p.chain.as_deref().map(chain_key), p.name.to_lowercase())
+}
+
+/// Create or update the stores, chain layouts and products of an envelope:
+/// stores by id, layouts by chain, products by id when it is the same
+/// product, else by (food, store or chain, name), else as new rows.
+pub fn import(db: &Db, envelope: &Json) -> Result<Imported> {
+    let mut done = Imported::default();
+    let now = now_iso();
+    for s in envelope.get("stores").and_then(Json::as_array).into_iter().flatten() {
+        let id = validate_store_id(&jtext(s, "id").ok_or_else(|| AppError::invalid("a store without an id"))?)?;
+        let chain = jtext(s, "chain").ok_or_else(|| AppError::invalid(format!("store {id} has no chain")))?;
+        let old = get_store(db, &id)?;
+        let st = Store {
+            name: jtext(s, "name").unwrap_or_else(|| chain.clone()),
+            chain,
+            address: jtext(s, "address"),
+            website: jtext(s, "website"),
+            notes: jtext(s, "notes"),
+            layout: jtext(s, "layout").map(|l| Layout::parse(&l).map(|l| l.to_text())).transpose()?,
+            created_at: old
+                .as_ref()
+                .map(|o| o.created_at.clone())
+                .or_else(|| jtext(s, "created_at"))
+                .unwrap_or_else(|| now.clone()),
+            updated_at: jtext(s, "updated_at").unwrap_or_else(|| now.clone()),
+            id,
+        };
+        match old {
+            Some(_) => update_store(db, &st)?,
+            None => insert_store(db, &st)?,
+        }
+        done.stores += 1;
+    }
+    for l in envelope.get("chain_layouts").and_then(Json::as_array).into_iter().flatten() {
+        let (Some(chain), Some(layout)) = (jtext(l, "chain"), jtext(l, "layout")) else { continue };
+        set_chain_layout(db, &chain, Some(&Layout::parse(&layout)?))?;
+        done.chain_layouts += 1;
+    }
+    let mut existing = all_products(db)?;
+    for v in envelope.get("store_products").and_then(Json::as_array).into_iter().flatten() {
+        let food = jtext(v, "food").ok_or_else(|| AppError::invalid("a store product without a food"))?;
+        let item_id = jtext(v, "item_id").filter(|i| crate::store::get_item(db, i).ok().flatten().is_some());
+        let price = match v.get("price") {
+            Some(Json::Null) | None => None,
+            Some(x) => Some(crate::util::parse_money(&jtext(&json!({"p": x}), "p").unwrap_or_default())?),
+        };
+        let store_id = jtext(v, "store");
+        let mut p = Product {
+            id: v.get("id").and_then(Json::as_i64).unwrap_or(0),
+            food_key: food_key(&food),
+            name: jtext(v, "name").unwrap_or_else(|| food.clone()),
+            food,
+            item_id,
+            chain: if store_id.is_some() { None } else { jtext(v, "chain") },
+            store_id,
+            brand: jtext(v, "brand"),
+            size: jtext(v, "size"),
+            price,
+            price_seen: jtext(v, "price_seen"),
+            url: jtext(v, "url"),
+            sku: jtext(v, "sku"),
+            plu: jtext(v, "plu"),
+            upc: jtext(v, "upc"),
+            section: jtext(v, "section").and_then(|s| section_id(&s)).map(|s| s.0),
+            aisle: jtext(v, "aisle"),
+            notes: jtext(v, "notes"),
+            created_at: jtext(v, "created_at").unwrap_or_else(|| now.clone()),
+            updated_at: jtext(v, "updated_at").unwrap_or_else(|| now.clone()),
+        };
+        let key = natural_key(&p);
+        let same = existing
+            .iter()
+            .find(|e| e.id == p.id && natural_key(e) == key)
+            .or_else(|| existing.iter().find(|e| natural_key(e) == key))
+            .cloned();
+        match same {
+            Some(e) => {
+                p.id = e.id;
+                p.created_at = e.created_at;
+                update_product(db, &p)?;
+                existing.retain(|x| x.id != p.id);
+            }
+            None => {
+                p.id = insert_product(db, &p)?;
+            }
+        }
+        existing.push(p);
+        done.store_products += 1;
+    }
+    Ok(done)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

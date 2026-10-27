@@ -8,6 +8,7 @@ use crate::output::Format;
 
 pub use crate::cli_admin::{AuditCmd, ConfigCmd, DbCmd, KeyCmd};
 pub use crate::cli_lists::{CohortCmd, EntryFlags, ListCmd, MatchArgs, MatcherFlags};
+pub use crate::cli_stores::{SourceCmd, SourceFlags, StoreCmd, StoreFlags};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -157,6 +158,12 @@ pub enum Command {
     Cohort(CohortCmd),
     /// Run the matching ladder over a profile without a list
     Match(MatchArgs),
+    /// Stores (grocery shops of a chain) near a property, their layouts, and the profile's stores
+    #[command(subcommand)]
+    Store(StoreCmd),
+    /// Store products: where to buy a food, at which store, in which section and aisle
+    #[command(subcommand)]
+    Source(SourceCmd),
     /// Reports: insurance inventory, warranties
     #[command(subcommand)]
     Report(ReportCmd),

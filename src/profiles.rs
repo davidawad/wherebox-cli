@@ -11,6 +11,7 @@
 //! address = "1 Shore Rd"
 //! db_path = "~/vaults/lake.db"
 //! rented = true   # a rental: insurance reports cover contents only
+//! stores = ["sprouts-north", "aldi-main"]   # where it shops; the first is the default
 //! ```
 //!
 //! There are no built-in properties: profiles come from `[profiles.NAME]`
@@ -34,6 +35,7 @@ pub struct ProfileConf {
     pub address: Option<String>,
     pub db_path: Option<String>,
     pub rented: Option<bool>,
+    pub stores: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -45,6 +47,8 @@ pub struct Profile {
     pub db_path: PathBuf,
     /// A rental (renter's insurance: contents only).
     pub rented: bool,
+    /// Store ids (see `store ls`), the default first.
+    pub stores: Vec<String>,
     /// `config` or `found` (a database in the profiles directory).
     pub source: &'static str,
 }
@@ -99,10 +103,46 @@ fn get_in(config_path: &Path, name: &str, dir: &Path) -> Result<Profile> {
         title: conf.as_ref().and_then(|c| c.title.clone()).unwrap_or_else(|| name.clone()),
         address: conf.as_ref().and_then(|c| c.address.clone()),
         rented: conf.as_ref().and_then(|c| c.rented).unwrap_or(false),
+        stores: conf.as_ref().and_then(|c| c.stores.clone()).unwrap_or_default(),
         name,
         db_path,
         source,
     })
+}
+
+/// Set `stores = [...]` in the profile's `[profiles.NAME]` table (created
+/// when missing); the rest of the file is kept as it is.
+pub fn write_stores(config_path: &Path, name: &str, stores: &[String]) -> Result<()> {
+    let name = validate_name(name)?;
+    let text = std::fs::read_to_string(config_path).unwrap_or_default();
+    let (head, block) = crate::enc_config::split(&text);
+    let mut doc: toml_edit::DocumentMut =
+        head.parse().map_err(|e| AppError::config(format!("{}: {e}", config_path.display())))?;
+    let profiles = doc
+        .entry("profiles")
+        .or_insert_with(|| {
+            let mut t = toml_edit::Table::new();
+            t.set_implicit(true);
+            toml_edit::Item::Table(t)
+        })
+        .as_table_mut()
+        .ok_or_else(|| AppError::config("[profiles] is not a table"))?;
+    let table = profiles
+        .entry(&name)
+        .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()))
+        .as_table_mut()
+        .ok_or_else(|| AppError::config(format!("[profiles.{name}] is not a table")))?;
+    if stores.is_empty() {
+        table.remove("stores");
+    } else {
+        table["stores"] = toml_edit::value(stores.iter().collect::<toml_edit::Array>());
+    }
+    crate::config::ensure_file(config_path)?;
+    let mut out = doc.to_string();
+    if !block.is_empty() {
+        out = format!("{}\n\n{block}", out.trim_end());
+    }
+    std::fs::write(config_path, out).map_err(|e| AppError::io(format!("writing {}: {e}", config_path.display())))
 }
 
 /// Every known profile: configured and databases found in the

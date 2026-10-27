@@ -170,6 +170,7 @@ fn show(ctx: &Ctx, name: Option<&str>) -> Result<()> {
         "title": p.title,
         "address": p.address,
         "rented": p.rented,
+        "stores": p.stores.join(", "),
         "db_path": p.db_path,
         "source": p.source,
         "exists": p.db_path.exists(),

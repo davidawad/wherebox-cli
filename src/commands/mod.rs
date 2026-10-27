@@ -20,6 +20,7 @@ pub mod report;
 pub mod security;
 pub mod shelf_life_cmd;
 pub mod shopping;
+pub mod store_cmd;
 
 use crate::cli::Command;
 use crate::context::Ctx;
@@ -33,6 +34,8 @@ pub fn dispatch(ctx: &Ctx, cmd: Command) -> Result<Status> {
         Command::List(c) => return list_cmd::run(ctx, c),
         Command::Cohort(c) => list_cmd::cohort(ctx, c),
         Command::Match(a) => list_cmd::match_cmd(ctx, a),
+        Command::Store(c) => store_cmd::store(ctx, c),
+        Command::Source(c) => store_cmd::source(ctx, c),
         Command::Add(a) => items::add(ctx, a),
         Command::Edit(a) => items::edit(ctx, a),
         Command::Mv(a) => items::mv(ctx, a),
