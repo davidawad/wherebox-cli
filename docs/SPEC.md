@@ -325,6 +325,7 @@ name = "Nutty pudding"
 type = "recipe"          # recipe, kit, packing, wishlist, or any other string
 profile = "beach-house"       # optional default profile for check/shop/pin/explain
 notes = "serves 6"
+food = true              # only food is a candidate (default: true for recipe, false otherwise)
 
 [[entry]]
 name = "walnuts"         # display name; also the fuzzy name (see below)
@@ -337,10 +338,29 @@ exclude = ["walnut oil"]
 pins = ["asin:B0WALNUT01"]
 ```
 
-Types with behaviour: `recipe` (consumables; expired and presumed used-up lots don't count),
+Types with behaviour: `recipe` (consumables; expired and presumed used-up lots don't count; a food list),
 `kit` and `packing` (lent items don't count: they are not here to pack),
 `wishlist` (see below). Any other string is a custom type with recipe
-semantics.
+semantics (not a food list unless `food = true`).
+
+**Food lists** (`food = true`, the default for `recipe`; `list new --food
+true|false` or the `food` key sets it per list): only food items are
+candidates at the attribute and name tiers (labels, presets, cohorts, fuzzy
+names); identifiers, URLs and pins still match anything. An item is food
+unless its `Kind` is `durable`, its preset's category is not `food`, a label
+says otherwise (`household`, `cleaning`, `toiletries`, `personal care`,
+`beauty`, `cosmetics`, `fragrance`, `health`, `medicine`, `supplements`,
+`vitamins`, `pet supplies`, `office`, `electronics`, `clothing`, `tools`,
+`paper`, `durable`, and no food label) or its name does (`spray`, `edp`,
+`parfum`, `cologne`, `candle`, `soap`, `shampoo`, `lotion`, `serum`,
+`capsule`, `softgel`, `tablet`, `supplement`, `vitamin`, `detergent`,
+`cleaner`, `wipe`...); and it is food when its preset is a `food` preset, a
+label (`food`, `grocery`, `grocery & gourmet food`, `produce`, `pantry`,
+`snacks`, `beverages`, `dairy`, `meat`, `seafood`, `frozen`, `bakery`...) or
+`Kind = food` says so, it has a shelf-life type, it (or a lot) is kept in a
+fridge, freezer or pantry, or its name's head noun is a food noun (the food
+lexicon below, or a shelf-life type). Anything else is not a candidate. `list
+explain` shows each candidate's `food` verdict.
 
 ### Matchers
 
@@ -383,6 +403,15 @@ dropped, the rest sorted, trailing `/` dropped. Amazon hosts (`amazon.*`,
 `/o/ASIN/<ASIN>` or `/exec/obidos/ASIN/<ASIN>`. No network: short links
 (`a.co`, `amzn.to`) only compare as URLs.
 
+Head nouns: a product name is cut into segments at commas, parentheses,
+`/`, ` - ` and the words `in`, `with`, `for`, `from`, `by` (`Tuna in Water,
+5 oz Can` -> `tuna`, `water`, `5 oz can`); a segment's head noun is its last
+normalized word that is not a modifier (`organic`, `frozen`, `raw`,
+`whole`, `wild`, `boneless`...), packaging (`bag`, `head`, `bunch`, `jar`,
+`can`, `loaf`...) or a cut (`halves`, `slices`, `root`, `cloves`,
+`leaves`...). `Hemp Seed Organic, 12 Ounce` is seeds, `Walnut Halves` walnuts,
+`Chili Garlic Sauce` a sauce.
+
 Fuzzy names: lower case; punctuation to spaces; pack and size tokens dropped
 (`12-pack`, `pack of 6`, `5oz`, `16 fl oz`, `2 lb`, `x3`, bare numbers);
 marketing and preparation stopwords dropped (`premium`, `value`, `family
@@ -391,14 +420,25 @@ are kept, they change the product); words singularized (`berries` -> `berry`, `w
 `walnut`). Similarity is token-set based: each query token is matched to the
 most similar candidate token (strsim Jaro-Winkler, counted when >= 0.94), and
 `score = 0.9 * query coverage + 0.1 * candidate coverage`, so a query fully
-contained in a long Amazon title scores >= 0.9 and an exact name 1.0.
+contained in a long Amazon title scores >= 0.9 and an exact name 1.0. The
+query's head noun must be the head noun of a segment of the candidate: a
+shared modifier alone is not enough, and a compound product in which the
+query's noun is only a flavour or modifier (`garlic` in `Chili Garlic
+Sauce`, `berry` in `Berry Trail Mix`, `cherry` in `Lost Cherry Eau de Parfum
+Spray`) scores at most 0.5. Synonyms widen food nouns: an entry named like a
+lexicon key or a shelf-life type also matches candidates whose head noun is
+one of its synonyms (`berries`: blueberries, raspberries, strawberries,
+blackberries; `nut milk`: almond, macadamia, cashew milk; `citrus`: lime,
+lemon, orange...), at 0.95 of that head match, and the match says so (`name
+"berries" (as blueberry)`). Words compare equal when identical or, both six
+letters or longer, Jaro-Winkler >= 0.94.
 Candidates are ranked per query (`name` and each `any`). The match is
 **ambiguous** when the best two distinct candidates (different normalized
 names) are within 0.03 of each other and they don't both contain every query
 token (two walnut products that both contain "walnut" are both counted;
-"dark chocolate chips" between "Dark Chocolate Bar" and "Dark Chocolate
-Chunks", both 0.65, is ambiguous at a threshold of 0.6: pin one, or add an
-`exclude`). Ambiguity only
+"dark chocolate chips" between "Milk Chocolate Chips" and "Semi-Sweet
+Chocolate Chips", 0.65 and 0.64, is ambiguous at a threshold of 0.6: pin
+one, or add an `exclude`; a "Dark Chocolate Bar" is not chips at all). Ambiguity only
 matters when the entry has no match above tier e.
 
 Every match reports its tier (`identifier`, `url`, `pinned`, `attribute`,
@@ -429,8 +469,16 @@ has 12 cans; one `Fish Oil, 90 Count` has 90 capsules. An entry in `ea` or
 `pack` is never multiplied (one 12-pack is one `ea`), nor is an item counted
 in the inner unit itself. An item counted in a count unit whose name states a
 size (`Walnut Halves 16 oz`) counts as that many of the size per unit for a
-mass or volume entry. Any other mismatch is **unit mismatch**: unknown, not
-missing.
+mass or volume entry. Common foods convert further through the food lexicon
+(`data/food.toml`, from USDA FoodData Central portion weights), found by the
+entry's head noun, else the item's: a density (g per ml) turns volume into
+mass and back (`1 tbsp hemp seeds` against a 12 oz bag: 10 g a tablespoon,
+basis `density`), and piece weights turn count-like units into mass (`1
+clove garlic` is 3 g; a `garlic, 1 head` item counted `ea` is a 30 g head,
+about 10 cloves, a `garlic 3 lb bag` 1360 g; `2 limes`, `10 cherries` and
+`3 brazil nuts` count against bags by weight; basis `piece weight`). Any
+other mismatch, an unknown density or piece weight included, is **unit
+mismatch**: unknown, not missing.
 
 Entry status: `have` (enough), `short` (have x of y), `missing`, `ambiguous`,
 `unit-mismatch`. The list is **ready** when every non-optional entry is
@@ -449,7 +497,7 @@ check` on a wishlist always exits 0.
 ### Commands
 
 ```
-wherebox list new <name> --type <t> [--profile P] [--notes N]
+wherebox list new <name> --type <t> [--profile P] [--notes N] [--food BOOL]
 wherebox list ls | show <l> | rm <l>
 wherebox list add <l> <entry> [--qty --unit --note --asin --sku --upc --product-ref --url --label --preset --at --cohort --any N... --exclude N... --optional --fuzzy B --threshold T]
 wherebox list edit <l> <entry> [same flags] [--name N] [--required] [--clear FIELD]
