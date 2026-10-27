@@ -128,12 +128,18 @@ pub enum ListCmd {
         /// Fuzzy threshold (overrides the list's and the setting)
         #[arg(long, value_name = "T")]
         threshold: Option<String>,
+        /// Source missing entries at this store (default: the profile's first store)
+        #[arg(long, short = 's', value_name = "STORE")]
+        store: Option<String>,
     },
-    /// What to buy for a list, as `shopping` rows
+    /// What to buy for a list: a numbered walk through the store, by section and aisle
     Shop {
         list: String,
         #[command(flatten)]
         scope: ProfileScope,
+        /// Shop at this store (default: the profile's first store)
+        #[arg(long, short = 's', value_name = "STORE")]
+        store: Option<String>,
     },
     /// Confirm an item as an entry's match (stored by identifier when it has one)
     Pin {

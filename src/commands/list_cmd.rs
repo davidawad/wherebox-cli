@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use toml_edit::{value, Table};
 
 use crate::cli::{CohortCmd, EntryFlags, ListCmd, MatchArgs, MatcherFlags};
+use crate::commands::store_cmd::Sourcing;
 use crate::commands::Status as ExitStatus;
 use crate::context::Ctx;
 use crate::db::Db;
@@ -13,6 +14,7 @@ use crate::error::{AppError, Result};
 use crate::lists::{self, CohortFile, Doc, Entry, EntryCheck, Inventory, Kind, ListFile, Matcher, Resolved, Status};
 use crate::output::{to_record, Format, Record, Report};
 use crate::profiles::Profile;
+use crate::sourcing::Want;
 use crate::util::fmt_qty;
 
 /// Exit status of `list check` when the list is not ready.
@@ -20,8 +22,8 @@ pub const NOT_READY: ExitStatus = 3;
 
 pub fn run(ctx: &Ctx, cmd: ListCmd) -> Result<ExitStatus> {
     match cmd {
-        ListCmd::Check { list, scope, threshold } => {
-            return check(ctx, &list, scope.all_profiles, threshold.as_deref())
+        ListCmd::Check { list, scope, threshold, store } => {
+            return check(ctx, &list, scope.all_profiles, threshold.as_deref(), store.as_deref())
         }
         ListCmd::New { name, kind, notes, food } => new(ctx, &name, &kind, notes.as_deref(), food.as_deref()),
         ListCmd::Ls => ls(ctx),
@@ -32,7 +34,7 @@ pub fn run(ctx: &Ctx, cmd: ListCmd) -> Result<ExitStatus> {
             edit(ctx, &list, &entry, name.as_deref(), required, &clear, &want, &m)
         }
         ListCmd::Drop { list, entry } => drop_entry(ctx, &list, &entry),
-        ListCmd::Shop { list, scope } => shop(ctx, &list, scope.all_profiles),
+        ListCmd::Shop { list, scope, store } => shop(ctx, &list, scope.all_profiles, store.as_deref()),
         ListCmd::Pin { list, entry, item } => pin(ctx, &list, &entry, &item),
         ListCmd::Unpin { list, entry, pin, all } => unpin(ctx, &list, &entry, pin.as_deref(), all),
         ListCmd::Explain { list, entry, threshold } => explain(ctx, &list, &entry, threshold.as_deref()),
@@ -567,23 +569,63 @@ fn round(q: f64) -> f64 {
     (q * 1000.0).round() / 1000.0 + 0.0
 }
 
-fn check(ctx: &Ctx, spec: &str, all: bool, th: Option<&str>) -> Result<ExitStatus> {
+/// What an entry wants from a store: its names and the items it matched.
+fn want_of(e: &Entry, c: &EntryCheck) -> Want {
+    Want {
+        names: std::iter::once(e.name.clone()).chain(e.m.any.iter().cloned()).collect(),
+        items: c.matches.iter().filter_map(|(m, _)| m.item.as_ref().map(|i| i.id.clone())).collect(),
+    }
+}
+
+/// How much of an entry to buy, if any (missing, short, open wishlist entries).
+fn need_of(c: &EntryCheck) -> Option<f64> {
+    match c.status {
+        Status::Missing | Status::Open => Some(c.want),
+        Status::Short => Some(round(c.want - c.have)),
+        _ => None,
+    }
+}
+
+/// The sourcing fields of every entry (null for entries that need nothing).
+fn source_cols(list: &ListFile, checks: &[EntryCheck], src: &Sourcing) -> Vec<serde_json::Map<String, Value>> {
+    let blank = src.fields(None, 0.0, "").into_iter().map(|(k, _)| (k, Value::Null)).collect::<serde_json::Map<_, _>>();
+    list.entries
+        .iter()
+        .zip(checks)
+        .map(|(e, c)| match need_of(c) {
+            Some(need) => src.fields(src.choose(&want_of(e, c)).as_ref(), need, &c.unit),
+            None => blank.clone(),
+        })
+        .collect()
+}
+
+fn check(ctx: &Ctx, spec: &str, all: bool, th: Option<&str>, store: Option<&str>) -> Result<ExitStatus> {
     let d = load_list(ctx, spec)?;
     let t = threshold(ctx, th)?;
     let list = &d.data;
-    let per: Vec<(Option<Profile>, Vec<EntryCheck>)> =
-        on_list_db(ctx, list, all, "list check", |c, p, db| Ok((p.cloned(), check_all(c, p, db, list, t)?)))?;
+    let per: Vec<(Option<Profile>, Vec<EntryCheck>, Sourcing)> =
+        on_list_db(ctx, list, all, "list check", |c, p, db| {
+            Ok((p.cloned(), check_all(c, p, db, list, t)?, Sourcing::load(c, p, db, store)?))
+        })?;
     let mut rows = Vec::new();
     let mut verdicts = serde_json::Map::new();
     let mut lines = Vec::new();
     let mut any_ready = false;
-    for (p, checks) in &per {
+    let mut sourced = false;
+    for (p, checks, src) in &per {
         let (ready, v) = lists::verdict(list, checks);
         any_ready |= ready;
         let who = p.as_ref().map_or_else(|| "-".to_string(), |p| p.name.clone());
-        verdicts.insert(who.clone(), json!({"ready": ready, "verdict": v}));
+        verdicts.insert(
+            who.clone(),
+            json!({"ready": ready, "verdict": v, "store": src.shop.store.as_ref().map(|s| &s.id)}),
+        );
         lines.push(if per.len() > 1 { format!("{who}: {v}") } else { v });
-        rows.extend(check_rows(list, p.as_ref(), checks));
+        sourced |= src.active();
+        for (mut r, extra) in check_rows(list, p.as_ref(), checks).into_iter().zip(source_cols(list, checks, src)) {
+            r.extend(extra);
+            rows.push(r);
+        }
     }
     let ready = any_ready || list.is_wishlist();
     let verdict = lines.join("\n");
@@ -598,6 +640,9 @@ fn check(ctx: &Ctx, spec: &str, all: bool, th: Option<&str>) -> Result<ExitStatu
     let mut cols = vec!["n", "entry", "want", "unit", "have", "status", "matched"];
     if all {
         cols.insert(0, "profile");
+    }
+    if sourced {
+        cols.push("buy");
     }
     let report = Report::list("list_check", rows)
         .table_columns(&cols)
@@ -617,11 +662,11 @@ fn check(ctx: &Ctx, spec: &str, all: bool, th: Option<&str>) -> Result<ExitStatu
     Ok(if ready { 0 } else { NOT_READY })
 }
 
-/// Shortfall rows of a list in the `shopping` shape.
-fn shop_rows(list: &ListFile, p: Option<&Profile>, checks: &[EntryCheck]) -> (Vec<Record>, Vec<String>) {
+/// Shortfall rows of a list in the `shopping` shape, with their entry's index.
+fn shop_rows(list: &ListFile, p: Option<&Profile>, checks: &[EntryCheck]) -> (Vec<(usize, Record)>, Vec<String>) {
     let mut rows = Vec::new();
     let mut skipped = Vec::new();
-    for (e, c) in list.entries.iter().zip(checks) {
+    for (n, (e, c)) in list.entries.iter().zip(checks).enumerate() {
         let (qty, detail) = match c.status {
             Status::Open => (c.want, format!("{}: wishlist", list.name)),
             Status::Missing => (c.want, format!("{}: missing", list.name)),
@@ -637,21 +682,24 @@ fn shop_rows(list: &ListFile, p: Option<&Profile>, checks: &[EntryCheck]) -> (Ve
         };
         let first = c.matches.first().and_then(|(m, _)| m.item.clone());
         let id = [&e.m.asin, &e.m.upc, &e.m.sku, &e.m.product_ref].iter().find_map(|v| v.first().cloned());
-        rows.push(to_record(&json!({
-            "item": e.name,
-            "qty": qty,
-            "unit": c.unit,
-            "vendor": first.as_ref().and_then(|f| f.vendor.clone()),
-            "product_ref": id.or_else(|| first.as_ref().and_then(|f| f.product_ref.clone())),
-            "reason": "list",
-            "detail": if e.optional { format!("{detail} (optional)") } else { detail },
-            "last_bought": Value::Null,
-            "cadence_days": Value::Null,
-            "overdue_days": Value::Null,
-            "location": first.as_ref().and_then(|f| f.location.clone()),
-            "profile": p.map(|p| p.name.clone()),
-            "asset_id": first.as_ref().and_then(|f| f.asset_id.clone()),
-        })));
+        rows.push((
+            n,
+            to_record(&json!({
+                "item": e.name,
+                "qty": qty,
+                "unit": c.unit,
+                "vendor": first.as_ref().and_then(|f| f.vendor.clone()),
+                "product_ref": id.or_else(|| first.as_ref().and_then(|f| f.product_ref.clone())),
+                "reason": "list",
+                "detail": if e.optional { format!("{detail} (optional)") } else { detail },
+                "last_bought": Value::Null,
+                "cadence_days": Value::Null,
+                "overdue_days": Value::Null,
+                "location": first.as_ref().and_then(|f| f.location.clone()),
+                "profile": p.map(|p| p.name.clone()),
+                "asset_id": first.as_ref().and_then(|f| f.asset_id.clone()),
+            })),
+        ));
     }
     (rows, skipped)
 }
@@ -663,7 +711,7 @@ pub fn list_shopping_rows(ctx: &Ctx, p: Option<&Profile>, db: &Db, list: &ListFi
     if !skipped.is_empty() {
         ctx.info(&format!("{}: left out (unknown): {}", list.name, skipped.join(", ")));
     }
-    Ok(rows)
+    Ok(rows.into_iter().map(|(_, r)| r).collect())
 }
 
 /// Load the lists `shopping --include-list` names.
@@ -671,21 +719,169 @@ pub fn load_lists(ctx: &Ctx, specs: &[String]) -> Result<Vec<ListFile>> {
     specs.iter().map(|s| load_list(ctx, s).map(|d| d.data)).collect()
 }
 
-fn shop(ctx: &Ctx, spec: &str, all: bool) -> Result<()> {
+/// One profile's walk through its store: the rows in walking order.
+struct Route {
+    profile: Option<Profile>,
+    rows: Vec<Record>,
+    store: Option<(String, String)>,
+    layout_source: &'static str,
+}
+
+/// `list shop` rows of one database, sourced at its store and sorted by the
+/// store's layout: section order, then aisle number, then name; entries with
+/// no product or section last.
+fn route(ctx: &Ctx, p: Option<&Profile>, db: &Db, list: &ListFile, store: Option<&str>) -> Result<Route> {
+    let checks = check_all(ctx, p, db, list, threshold(ctx, None)?)?;
+    let src = Sourcing::load(ctx, p, db, store)?;
+    let (rows, skipped) = shop_rows(list, p, &checks);
+    if !skipped.is_empty() {
+        ctx.info(&format!("{}: left out (unknown): {}", list.name, skipped.join(", ")));
+    }
+    type Key = (usize, u8, f64, String);
+    let mut keyed: Vec<(Key, Record)> = rows
+        .into_iter()
+        .map(|(n, mut r)| {
+            let (e, c) = (&list.entries[n], &checks[n]);
+            let need = r.get("qty").and_then(Value::as_f64).unwrap_or(c.want);
+            let choice = src.choose(&want_of(e, c));
+            let f = src.fields(choice.as_ref(), need, &c.unit);
+            let section = f.get("section").and_then(Value::as_str).map(str::to_string);
+            let aisle = f.get("aisle").and_then(Value::as_str).and_then(crate::sourcing::aisle_number);
+            let name = f.get("product").and_then(Value::as_str).unwrap_or(&e.name).to_lowercase();
+            let key = match &section {
+                Some(s) => {
+                    let (pos, sub) = src.layout.order(s);
+                    (pos, sub, aisle.unwrap_or(f64::MAX), name)
+                }
+                None => (usize::MAX, 0, 0.0, e.name.to_lowercase()),
+            };
+            if let Some(c) = &choice {
+                r.insert("vendor".into(), json!(crate::sourcing::product_place(&c.product, &src.stores)));
+            }
+            r.insert(
+                "group".into(),
+                json!(section
+                    .as_deref()
+                    .map_or_else(|| crate::sourcing::UNSORTED.to_string(), crate::sourcing::section_title)),
+            );
+            r.extend(f);
+            (key, r)
+        })
+        .collect();
+    keyed.sort_by(|a, b| {
+        let (x, y) = (&a.0, &b.0);
+        (x.0, x.1).cmp(&(y.0, y.1)).then(x.2.total_cmp(&y.2)).then_with(|| x.3.cmp(&y.3))
+    });
+    let rows = keyed
+        .into_iter()
+        .enumerate()
+        .map(|(i, (_, mut r))| {
+            r.insert("step".into(), json!(i + 1));
+            r
+        })
+        .collect();
+    Ok(Route {
+        profile: p.cloned(),
+        rows,
+        store: src.shop.store.as_ref().map(|s| (s.id.clone(), s.name.clone())),
+        layout_source: src.layout_source,
+    })
+}
+
+/// The walk as text: a header per profile, a heading per section, numbered steps.
+fn route_text(list: &ListFile, routes: &[Route]) -> String {
+    let mut out = String::new();
+    for r in routes {
+        let who = r.profile.as_ref().map(|p| format!("{}: ", p.name)).unwrap_or_default();
+        let layout = match r.layout_source {
+            "chain" => "layout: chain",
+            "store" => "layout: store",
+            _ => "layout: default",
+        };
+        match &r.store {
+            Some((id, name)) => out.push_str(&format!("{who}{} at {name} ({id}), {layout}\n", list.name)),
+            None => out.push_str(&format!("{who}{}: no store set (see `wherebox store use`), {layout}\n", list.name)),
+        }
+        if r.rows.is_empty() {
+            out.push_str("   nothing to buy\n");
+            continue;
+        }
+        let s = |r: &Record, k: &str| r.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+        let qty = |r: &Record| {
+            let q = r.get("qty").and_then(Value::as_f64).map(fmt_qty).unwrap_or_default();
+            format!("{q} {}", s(r, "unit"))
+        };
+        let what = |r: &Record| {
+            let name = if s(r, "product").is_empty() { s(r, "item") } else { s(r, "product") };
+            match s(r, "packs") {
+                p if p.is_empty() => name,
+                p => format!("{name} ({p})"),
+            }
+        };
+        let wq = r.rows.iter().map(|x| qty(x).chars().count()).max().unwrap_or(0);
+        let ww = r.rows.iter().map(|x| what(x).chars().count()).max().unwrap_or(0);
+        let mut group = String::new();
+        for x in &r.rows {
+            if s(x, "group") != group {
+                group = s(x, "group");
+                out.push_str(&format!("{group}\n"));
+            }
+            let aisle = match s(x, "aisle") {
+                a if a.is_empty() => String::new(),
+                a => format!("aisle {a}"),
+            };
+            let mut note = s(x, "source_note");
+            if x.get("source_id").is_none_or(Value::is_null) {
+                note = s(x, "buy");
+            } else if s(x, "source_tier") == "other" {
+                let at = format!("at {}", s(x, "source_at"));
+                note = if note.is_empty() { at } else { format!("{at}; {note}") };
+            }
+            let line = format!(
+                "{:>4}. {:<wq$}  {:<ww$}  {:<9} {note}",
+                x.get("step").and_then(Value::as_u64).unwrap_or(0),
+                qty(x),
+                what(x),
+                aisle
+            );
+            out.push_str(line.trim_end());
+            out.push('\n');
+        }
+    }
+    out
+}
+
+fn shop(ctx: &Ctx, spec: &str, all: bool, store: Option<&str>) -> Result<()> {
     let d = load_list(ctx, spec)?;
     let list = &d.data;
-    let rows: Vec<Record> = on_list_db(ctx, list, all, "list shop", |c, p, db| list_shopping_rows(c, p, db, list))?
-        .into_iter()
-        .flatten()
+    let routes = on_list_db(ctx, list, all, "list shop", |c, p, db| route(c, p, db, list, store))?;
+    let meta: Vec<Value> = routes
+        .iter()
+        .map(|r| {
+            json!({
+                "profile": r.profile.as_ref().map(|p| &p.name),
+                "store": r.store.as_ref().map(|s| &s.0),
+                "store_name": r.store.as_ref().map(|s| &s.1),
+                "layout_source": r.layout_source,
+                "steps": r.rows.len(),
+            })
+        })
         .collect();
+    if ctx.out.format == Format::Table {
+        let text = route_text(list, &routes);
+        return ctx.write_output(text.as_bytes(), &ctx.out);
+    }
+    let rows: Vec<Record> = routes.into_iter().flat_map(|r| r.rows).collect();
     if rows.is_empty() {
         ctx.info("nothing to buy");
     }
-    let mut cols = vec!["item", "qty", "unit", "reason", "detail", "vendor"];
+    let mut cols = vec!["step", "group", "item", "qty", "unit", "product", "aisle", "source_note", "detail"];
     if all {
         cols.insert(0, "profile");
     }
-    ctx.emit(&Report::list("shopping", rows).table_columns(&cols).meta("list", list_header(&d)))
+    ctx.emit(
+        &Report::list("shopping", rows).table_columns(&cols).meta("list", list_header(&d)).meta("route", json!(meta)),
+    )
 }
 
 // ---------------------------------------------------------------------------
