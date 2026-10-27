@@ -522,6 +522,17 @@ const PACKAGING: &[&str] = &[
     "servings",
 ];
 
+/// Cuts and forms: skipped when looking for the head noun (`Walnut Halves`
+/// are walnuts, `Ginger Root` is ginger, `Garlic Cloves` are garlic).
+const FORMS: &[&str] = &[
+    "halve", "half", "slice", "chunk", "bit", "flake", "floret", "wedge", "strip", "fillet", "filet", "spear", "cube",
+    "crumble", "kernel", "root", "leaf", "leave", "clove", "stalk", "sprig", "stem",
+];
+
+fn skipped(t: &str) -> bool {
+    MODIFIERS.contains(&t) || PACKAGING.contains(&t) || FORMS.contains(&t)
+}
+
 /// Words that end the part of a product name that says what it is
 /// (`Tuna in Water`, `Tortillas with Flax`, `Snacks for Kids`).
 const SEGMENT_WORDS: &[&str] = &["in", "with", "for", "from", "by", "w"];
@@ -557,25 +568,24 @@ pub fn segments(name: &str) -> Vec<Segment> {
         .iter()
         .map(|p| {
             let tokens = name_tokens(p);
-            let core: Vec<String> = tokens
-                .iter()
-                .filter(|t| !MODIFIERS.contains(&t.as_str()) && !PACKAGING.contains(&t.as_str()))
-                .cloned()
-                .collect();
-            let head = core.last().cloned();
+            let core: Vec<String> = tokens.iter().filter(|t| !skipped(t)).cloned().collect();
+            // a name made only of skipped words (`Whole Cloves`) is its own head
+            let head = core.last().or(tokens.last()).cloned();
             Segment { tokens, core, head }
         })
         .filter(|s| !s.tokens.is_empty())
         .collect()
 }
 
+/// The same word, allowing a typo in longer words (`wallnut`), but not
+/// telling short ones apart by one letter (`drill` is not `dill`).
 fn same_word(a: &str, b: &str) -> bool {
-    a == b || strsim::jaro_winkler(a, b) >= TOKEN_SIM
+    a == b || (a.len().min(b.len()) >= 6 && strsim::jaro_winkler(a, b) >= TOKEN_SIM)
 }
 
 /// The head noun of a phrase (`chicken breasts` -> `breast`).
 pub fn phrase_head(tokens: &[String]) -> Option<&String> {
-    tokens.iter().rev().find(|t| !MODIFIERS.contains(&t.as_str()) && !PACKAGING.contains(&t.as_str()))
+    tokens.iter().rev().find(|t| !skipped(t)).or(tokens.last())
 }
 
 /// How a phrase (a shelf-life type, a recipe entry) names a product.
