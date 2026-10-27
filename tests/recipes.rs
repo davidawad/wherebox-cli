@@ -142,3 +142,49 @@ fn identifiers_and_pins_still_reach_non_food() {
     e.run(&["list", "add", "bathroom-kit", "perfume", "--label", "amazon", "--at", "Bathroom"]);
     assert_eq!(rows(&check(&e, "bathroom-kit"))[0]["state"], "have");
 }
+
+#[test]
+fn flavours_of_sauces_and_cereals_are_not_the_food() {
+    let e = Env::pinned();
+    let add = |name: &str| e.run(&["add", name, "--at", "Home / Kitchen / Pantry", "--label", "amazon,grocery"]);
+    for name in [
+        "Huy Fong Sauce Chili Garlic 18oz",
+        "Tuong Ot Toi Viet-Nam Chili Garlic Sauce",
+        "Chex Cereal, Blueberry, Gluten Free, 12 oz",
+        "Garlic Powder",
+    ] {
+        add(name);
+    }
+    recipe(&e, "1 clove garlic\n1 cup berries\n1 tsp garlic powder\n");
+    let v = check(&e, "smoothie-bowl");
+    // garlic is a modifier of a sauce (head first or last) and of a powder
+    assert!(matched(&v, "garlic").is_empty(), "{v}");
+    assert_eq!(row(&v, "entry", "garlic")["state"], "missing");
+    // blueberry flavours a cereal: the synonym does not widen to it
+    assert!(matched(&v, "berries").is_empty(), "{v}");
+    assert_eq!(row(&v, "entry", "berries")["state"], "missing");
+    // the powder is garlic powder
+    assert_eq!(matched(&v, "garlic powder"), ["Garlic Powder"]);
+    let x = e.json(&["list", "explain", "smoothie-bowl", "garlic"]);
+    for name in ["Huy Fong Sauce Chili Garlic 18oz", "Tuong Ot Toi Viet-Nam Chili Garlic Sauce", "Garlic Powder"] {
+        assert!(row(&x, "item", name)["name_score"].as_f64().unwrap() <= 0.5, "{x}");
+    }
+
+    // the real thing still matches
+    for name in [
+        "Organic Garlic, 1 Head",
+        "Fresh Garlic 3 lb bag",
+        "Wyman's Frozen Wild Blueberries 3 lb",
+        "Organic Raspberries 6 oz",
+    ] {
+        add(name);
+    }
+    let v = check(&e, "smoothie-bowl");
+    let mut garlic = matched(&v, "garlic");
+    garlic.sort();
+    assert_eq!(garlic, ["Fresh Garlic 3 lb bag", "Organic Garlic, 1 Head"], "{v}");
+    let mut berries = matched(&v, "berries");
+    berries.sort();
+    assert_eq!(berries, ["Organic Raspberries 6 oz", "Wyman's Frozen Wild Blueberries 3 lb"], "{v}");
+    assert_eq!(matched(&v, "garlic powder"), ["Garlic Powder"]);
+}
