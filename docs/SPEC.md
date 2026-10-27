@@ -55,8 +55,8 @@ Additional tables for consumables (food, household):
 
 | Table | Columns | Homebox column |
 |---|---|---|
-| `items` (more) | `kind_preset` (see Presets), `unit` (ea, g, kg, ml, l, lb, oz, pack), `par_level` (keep at least N on hand), `reorder_qty`, `preferred_vendor`, `product_ref` (UPC/ASIN) | `HB.field.Preset`, `HB.field.Unit`, `HB.field.Par Level`, `HB.field.Reorder Qty`, `HB.field.Vendor`, `HB.field.Product Ref` |
-| `lots` | `item_id`, `qty`, `acquired_at`, `opened_at`, `expires_at`, `best_by`, `frozen_at`, `location_id` (fridge / freezer / pantry shelf), `status` (sealed, open, consumed, discarded), `unit_price`, `source_ref` (the purchase row, unique) | flattened on export: one HB row per open lot, `HB.field.Expires`, `HB.field.Lot Price`, `HB.field.Lot Ref` |
+| `items` (more) | `kind_preset` (see Presets), `unit` (ea, g, kg, ml, l, lb, oz, pack), `par_level` (keep at least N on hand), `reorder_qty`, `preferred_vendor`, `product_ref` (UPC/ASIN), `shelf_life` (a shelf-life type, `none` = never perishable, unset = classify by name; see Shelf life) | `HB.field.Preset`, `HB.field.Unit`, `HB.field.Par Level`, `HB.field.Reorder Qty`, `HB.field.Vendor`, `HB.field.Product Ref`, `HB.field.Shelf Life` |
+| `lots` | `item_id`, `qty`, `acquired_at`, `opened_at`, `best_by` (printed best-by override, perishables only), `frozen_at`, `thawed_at`, `confirmed_at` (last `lot confirm`), `location_id` (fridge / freezer / pantry shelf), `status` (sealed, open, consumed, discarded), `unit_price`, `source_ref` (the purchase row, unique). `expires_at` is a legacy column, always empty since schema v3: expiry is computed, never stored | flattened on export: one HB row per open lot, `HB.field.Best By`, `HB.field.Lot Price`, `HB.field.Lot Ref` |
 | `consumption` | `lot_id`, `qty`, `at`, `reason` (eaten, used, spoiled, discarded) | - |
 
 Each property is its own wherebox: a separate profile and database
@@ -87,6 +87,8 @@ wherebox value <item> <amount> [--at <date>]
 wherebox import <file> [--format homebox|csv|json|jsonl] [--mapping m.toml] [--dry-run]
 wherebox export [--format homebox|csv|json|jsonl] [--at <loc>] [--owner]
 wherebox preset ls|show <name>
+wherebox shelf-life ls | show <type> | set <type> [--pantry D] [--fridge D] [--freezer D] [--opened D] [--synonym S]... | reset <type>
+wherebox lot add|ls|edit|rm|confirm
 wherebox par <item> <n> [--reorder Q]
 wherebox shopping [--profile P | --all-profiles] [--within 7d] [--since 18] [--checklist] [--include-list L]
 wherebox list new|ls|show|rm|add|edit|drop|check|shop|pin|unpin|explain|import   # see Lists and matching
@@ -103,8 +105,9 @@ Every command takes `--json` (`wherebox/v1` envelope) for agents.
 
 A preset is a TOML file (`presets/kinds/*.toml`, user-overridable in the
 config dir) that says which dates and fields a kind of item tracks, sensible
-defaults, and its alerts. `wherebox add "Ribeye" --preset meat.raw --at
-"Fridge"` fills in the expiry from the preset. `wherebox preset ls` lists
+defaults, and its alerts. A food preset may name a default shelf-life type
+(`shelf_life_type = "raw-beef"`); presets never store lot dates (see Shelf
+life). `wherebox preset ls` lists
 them, and `wherebox preset show meat.raw` answers "what does this kind
 track". Starting set:
 
@@ -126,22 +129,126 @@ track". Starting set:
 | `seasonal` (paint, sealant, fuel, chemicals) | opened_at, shelf life, hazmat flag | shelf life |
 | `plant`, `pet-supply` | care interval | - |
 
-The shelf-life numbers are seeded from USDA FSIS FoodKeeper data (version
-128), with the FoodKeeper product ids cited in each preset file. `meat.ground`
-joins the set because FoodKeeper gives ground meat 1-2 days / 3-4 months
-against 3-5 days / 4-12 months for whole cuts. Every default a built-in
-preset sets cites a source (FoodKeeper, NFPA, NFPA 10, ENERGY STAR, or this
-spec for alert lead times); where no single figure can be cited (dairy,
-produce, drinks, CO alarms, vehicle service, warranty terms, reappraisal
-intervals) the value is left unset and the preset's notes say why. Fridge vs
-freezer is read from the location's name. Details: docs/presets.md.
+Shelf-life figures live in shelf-life types (below), not presets. Every
+default a built-in preset sets cites a source (NFPA, NFPA 10, ENERGY STAR, or
+this spec for alert lead times); where no single figure can be cited (CO
+alarms, vehicle service, warranty terms, reappraisal intervals) the value is
+left unset and the preset's notes say why. Details: docs/presets.md.
+
+## Shelf life
+
+Only perishables expire. Durables and non-perishable consumables (unopened
+canned goods, dry goods, cleaning supplies, toiletries, supplements,
+medicine, paper goods) have no expiry, and there is no way to give them one.
+
+**Types.** A shelf-life type (`banana`, `milk`, `raw-chicken`,
+`cheese-hard`, `opened-canned-food`, ...; about 60 built in, covering common
+fruit, vegetables, dairy, eggs, meat, poultry, seafood, bakery, prepared
+food and opened condiments) has a description, a group, days per storage
+(`pantry`, `fridge`, `freezer`; any may be absent = storing it there is not
+recommended), an `opened` figure where opening shortens it, and synonyms for
+classification. The defaults ship as an embedded data file
+(`shelf-life/types.toml`), conservative (the short end of every published
+range), with a comment per group citing USDA FSIS FoodKeeper and the
+FDA/FoodSafety.gov cold-storage chart. Durations: `5d`, `2w`, `6m`, `1y`.
+A type with only an `opened` figure (`opened-canned-food`,
+`opened-condiment`) is shelf-stable until opened.
+
+**Config.** `[shelf_life.<type>]` tables in `config.toml` override any field
+of a built-in type (`fridge = "7d"`; `fridge = "none"` removes a figure) or
+add a new type (it needs at least one figure). `wherebox shelf-life set
+<type> --fridge 7d --freezer 6m` writes that table (with `toml_edit`, the rest
+of the file untouched); `shelf-life reset <type>` removes it. `shelf-life
+ls` lists every type with its figures and origin (built-in, config, or
+built-in+config); `shelf-life show <type>` also lists synonyms and the
+source.
+
+**Item -> type.** An item's type is, in order: its `shelf_life` field (set
+with `add/edit --shelf-life <type>`, or `none` to say it never perishes;
+`edit --clear shelf_life` returns to automatic); nothing for an item marked
+`Kind = durable` or with a non-food preset (household, toiletry, medicine,
+supplement, tools...); else the best fuzzy match of the item's name against
+type names and synonyms (the matching ladder's name tier, tokens as in
+"Fuzzy names"), when it scores at least 0.9 and the name has no
+shelf-stable marker (`canned`, `can`, `dried`, `dry`, `powder`, `chips`,
+`jerky`, `freeze dried`, `shelf stable`, `uht`, `jar`, `jarred`,
+`pickled`); else the preset's `shelf_life_type`. Anything left unclassified
+is non-perishable. `show` and JSON report the type and how it was found
+(`shelf_life_basis`: explicit, name, preset).
+
+**Storage.** Where a lot is kept: the nearest location (the lot's, else its
+item's, walking up the tree) whose kind is `fridge`, `freezer` or `pantry`
+(location kinds), or whose name says so (`Freezer`, `Chest Freezer`, `Deep
+freeze`; `Fridge`, `Refrigerator`; `Pantry`, `Cupboard`, `Larder`).
+Default: pantry.
+
+**Expiry is computed, never stored.**
+
+```
+expires = base + figure
+  in the freezer (and the type has a freezer figure): frozen_at (else acquired_at) + freezer
+  else opened (opened_at) and the type has an opened figure: opened_at + opened
+  else: (thawed_at if later than acquired_at, else acquired_at) + figure for the storage
+```
+
+When the type has no figure for the lot's storage, the shortest of its
+pantry/fridge figures applies (conservative), else the freezer figure; a
+type with no storage figure at all never expires unopened. A printed best-by
+date on the lot (`lot add|edit --best-by`, perishables only) wins over the
+computation (`expiry_basis` = `printed`, else `computed`). Moving a lot (or
+its item) into a freezer sets `frozen_at` to that day (re-basing the clock;
+re-freezing re-bases again) and clears `thawed_at`; moving it out of a
+freezer sets `thawed_at`. `--best-by`/`Best By` on a non-perishable is
+rejected (`add`, `lot add`, `lot edit`) or dropped with a warning (import);
+there is no `--expires`.
+
+Migration (schema v3): lots of non-perishable items lose stored `expires_at`
+and `best_by`; lots of perishables keep a stored date only as a printed
+best-by override, and only when it differs from what the item's preset
+would have filled in (so preset-computed dates are dropped and recomputed);
+`expires_at` is emptied everywhere. Classification during the migration
+uses the built-in types (config overrides are not visible to it).
+
+## Estimated on hand
+
+Every purchase lot of a consumable used to count as on hand forever. Now
+each active lot (sealed or open, qty > 0) is either counted or **presumed
+used up**:
+
+- a lot with a computed (or printed) expiry: presumed used up once it is
+  past it;
+- any other lot (non-perishable): presumed used up once it is older than the
+  item's reorder cadence, counted from the latest of `acquired_at`, its last
+  logged use and `confirmed_at`. The cadence is the learned one (as in
+  `shopping`: median gap of 3+ purchase dates, else the `Recurring` field)
+  or else a default: the `[cadence]` config table by preset name, then by
+  preset category (`food`, `consumable`, ...), then the `default_cadence`
+  setting (`90d`).
+
+Explicit logs always win: `use`/`eat`/`toss` change logged quantities, and
+any logged use of a lot restarts its cadence clock. `wherebox lot confirm
+<item> [--qty N] [--lot L]` asserts what is on hand today: every active lot
+(or lot L) gets `confirmed_at` = today, which restarts its cadence clock
+(a perishable past its expiry stays expired: toss it or give it a printed
+`--best-by`); with `--qty N` the oldest lots are drawn down (reason `used`,
+note `lot confirm`) so that N remains.
+
+An item's `on_hand` is the sum of its counted lots; `on_hand_basis` is
+`logged` when no active lot is presumed used up, else `estimated`. Items
+without lots: `quantity`, basis `logged`. Text output marks estimates with a
+tilde (`~2`); `ls`, `show`, `list check`, `shopping` and `expiring` use the
+estimate. JSON of items, lots and list matches carries `on_hand`,
+`on_hand_basis`, `expires_at` (computed; null for non-perishables),
+`expiry_basis` (`printed`, `computed`, or null), plus `shelf_life`,
+`storage` and `presumed_used_up` on lots.
 
 ## Groceries and shopping
 
 - `wherebox use <item> [qty]` / `wherebox eat` / `wherebox toss` log
   consumption against the oldest lot first.
-- `wherebox expiring [--within 3d]` lists what to eat or toss, freezer
-  included.
+- `wherebox expiring [--within 3d]` lists perishable lots (computed
+  expiry, freezer included) that expire within the window or already have:
+  what to eat or toss. Non-perishables never appear.
 - A consumable bought repeatedly is one item with a lot per purchase. On
   import, consumable rows (`HB.field.Kind` = consumable, a food/consumable
   preset or label) sharing `HB.field.ASIN` (else a product ref) at one
@@ -151,7 +258,8 @@ freezer is read from the location's name. Details: docs/presets.md.
   regroup-consumables [--dry-run]` migrates existing databases in place and
   records `merged`/`regrouped` events.
 - `wherebox shopping [--profile rental-apt]` generates the list: every item
-  below `par_level`, anything expiring that has a par, plus learned
+  whose estimated on hand is below `par_level`, anything expiring that has a
+  par, plus learned
   reorders: with 3+ purchases (lot dates) the cadence is the median gap; due
   when that has passed since the last purchase and no unused lot was
   acquired within the last cadence. Without that history a `Recurring`
@@ -272,8 +380,10 @@ e), and what it matched (`via`, e.g. `cohort nuts: any "pecans"`).
 
 Per matched item: durables (no lots) count `quantity` when owned, stored or
 lent (kit/packing: owned or stored). Consumables count their unconsumed lots
-(sealed, open) whose location satisfies `at`; lots past their use-by/best-by
-date are reported separately (`expired`) and don't count. Quantities convert
+(sealed, open) whose location satisfies `at` and that are not presumed used
+up (see Estimated on hand); perishable lots past their computed expiry are
+reported separately (`expired`) and don't count. A have count that rests on
+an estimate shows as `~N` and the match's `on_hand_basis` is `estimated`. Quantities convert
 between compatible units: mass `g kg oz lb`, volume `ml l tsp tbsp cup`
 (`fl oz` is volume, `oz` mass), and count: `ea` (`each`, `ct`, `count`, `pc`,
 `pcs`, `piece`), `can`, `jar`, `bottle`, `box`, `bag`, `pack` (`pk`),
