@@ -167,12 +167,13 @@ source.
 with `add/edit --shelf-life <type>`, or `none` to say it never perishes;
 `edit --clear shelf_life` returns to automatic); nothing for an item marked
 `Kind = durable` or with a non-food preset (household, toiletry, medicine,
-supplement, tools...); else the best fuzzy match of the item's name against
-type names and synonyms (the matching ladder's name tier, tokens as in
-"Fuzzy names"), when it scores at least 0.9 and the name has no
-shelf-stable marker (`canned`, `can`, `dried`, `dry`, `powder`, `chips`,
-`jerky`, `freeze dried`, `shelf stable`, `uht`, `jar`, `jarred`,
-`pickled`); else the preset's `shelf_life_type`. Anything left unclassified
+supplement, tools...); else, for a consumable or an item that tracks lots,
+the best fuzzy match of the item's name against type names and synonyms
+(the matching ladder's name tier, tokens as in "Fuzzy names"), when it
+scores at least 0.9, the name has none of the type's `not` words
+(`peanut butter` is not `butter`) and no shelf-stable marker (`canned`,
+`can`, `dried`, `dry`, `powder`, `chips`, `jerky`, `freeze dried`, `shelf
+stable`, `uht`, `jar`, `jarred`, `pickled`); else the preset's `shelf_life_type`. Anything left unclassified
 is non-perishable. `show` and JSON report the type and how it was found
 (`shelf_life_basis`: explicit, name, preset).
 
