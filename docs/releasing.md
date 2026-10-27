@@ -1,5 +1,14 @@
 # Release process
 
+There is no CI (no GitHub Actions, no GitLab CI). Quality and releases run
+locally.
+
+## Before pushing
+
+```sh
+just test-gate   # cargo fmt --check, clippy -D warnings, tests
+```
+
 ## Releasing
 
 A release is one command on an up-to-date `master`:
@@ -18,38 +27,32 @@ just release 0.2.0
    `Cargo.lock` (no dependency is updated);
 3. prepends a `CHANGELOG.md` section built from the conventional commits since
    the previous tag (`scripts/changelog.sh`: git-cliff with `cliff.toml` when
-   it is installed, `cargo binstall git-cliff`; otherwise an awk fallback with
-   the same groups);
-4. commits `chore(release): v<version>`, creates the annotated tag
-   `v<version>` and pushes both (`git push --atomic`).
+   it is installed, otherwise an awk fallback with the same groups);
+4. commits `chore(release): v<version>`, creates the annotated tag and pushes
+   both with `git push --atomic origin`. `origin` has two push URLs (GitHub and
+   the GitLab mirror), so this one push keeps both in sync;
+5. runs `scripts/publish.sh v<version>`: builds `cargo build --release` for
+   this host, packages `wherebox-<version>-<target>.tar.gz` with the binary,
+   `LICENSE`, `README.md`, man pages and shell completions
+   (`scripts/package.sh`), writes `SHA256SUMS`, and creates the GitHub release
+   with this version's `CHANGELOG.md` section as notes.
 
-Everything after the push happens in GitHub Actions:
+More targets: on another machine, check out the tag and run
+`scripts/publish.sh v<version>`. It adds that host's archive and rewrites
+`SHA256SUMS` over every asset. `RELEASE_NO_BUILD=1` publishes without a binary.
 
-| workflow | trigger | does |
-|----------|---------|------|
-| `release.yml` | tag `v*` | fails unless the tag is `v<Cargo.toml version>`; builds each target natively (toolchains per [platforms.md](platforms.md)); packages `wherebox-<version>-<target>.tar.gz` (`.zip` on Windows) with the binary, `LICENSE`, `README.md`, man pages and shell completions (`scripts/package.sh`); writes `SHA256SUMS`; creates the GitHub release with notes from git-cliff (commits since the previous tag) |
-| `release.yml`, `homebrew` job | after the release | with the `HOMEBREW_TAP_TOKEN` secret: writes `Formula/wherebox.rb` (`scripts/homebrew-formula.sh`) to `davidawad/homebrew-tap`, or `davidawad/tap` if that is the one that exists. No secret or no tap: skipped with a notice |
-| `mirror.yml` | push to `master`, any tag | with the `GITLAB_MIRROR_SSH_KEY` secret: pushes `master` and tags to `git@gitlab.com:davidawad/wherebox-cli.git`. No secret: skipped with a notice |
-| `ci-full.yml` | tag `v*` | fmt, clippy and tests on all five platforms |
+Homebrew: after the archives are up, `scripts/homebrew-formula.sh <version>
+SHA256SUMS davidawad/wherebox-cli > Formula/wherebox.rb` in a checkout of
+`davidawad/homebrew-tap` writes the formula; commit and push it there.
 
 Write commit subjects as conventional commits (`feat:`, `fix(scope):`,
 `docs:`, `feat!:` for breaking changes, ...): they become the changelog and
-the release notes. `chore(release)` commits and non-conventional subjects are
-left out.
-
-## Secrets
-
-* `HOMEBREW_TAP_TOKEN`: a fine-grained token with *Contents: read and write*
-  on the tap repository.
-* `GITLAB_MIRROR_SSH_KEY`: the private half of a GitLab deploy key with write
-  access on the mirror project (allow it to push to the protected `master`
-  branch, or unprotect it on the mirror).
+the release notes.
 
 ## When something fails
 
-* **Tag does not match `Cargo.toml`**: delete the tag (`git push origin
-  :refs/tags/vX.Y.Z && git tag -d vX.Y.Z`), fix the version and release again.
-* **A build or the upload failed**: fix the cause on `master` if needed, then
-  re-run the failed jobs, or rebuild an existing tag with *Actions > Release >
-  Run workflow* (`gh workflow run release.yml -f tag=vX.Y.Z`). Re-running
-  replaces the assets and notes of the existing release.
+* **Push rejected**: nothing was published. Fix it, delete the local tag
+  (`git tag -d vX.Y.Z`), reset the release commit and run `just release` again.
+* **Build or upload failed**: the tag is already pushed. Fix the cause and run
+  `scripts/publish.sh vX.Y.Z` again; it replaces the assets of the existing
+  release.

@@ -1,12 +1,10 @@
 # Platforms
 
-wherebox-cli supports five targets. CI runs `cargo fmt --check`,
-`cargo clippy --all-targets -D warnings` and `cargo test` on them:
-`.github/workflows/ci.yml` on every push and pull request to `master`
-(`ubuntu-latest` on nightly, `macos-latest` on stable),
-`.github/workflows/ci-full.yml` on all five (by hand, on version tags and
-weekly). `.github/workflows/release.yml` builds the release archives on the
-runners below (see [releasing.md](releasing.md)).
+wherebox-cli supports five targets. There is no CI: run `just test-gate`
+before pushing. `just release` builds the release archive for the host it runs
+on, and `scripts/publish.sh <tag>` adds another host's archive to an existing
+release (see [releasing.md](releasing.md)). The runner column below is where
+each target is known to build.
 
 | target | CI runner | toolchain | release archive |
 |--------|-----------|-----------|-----------------|

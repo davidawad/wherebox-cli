@@ -165,20 +165,11 @@ HB.import_ref,HB.location,HB.label,HB.quantity,HB.name,HB.asset_id,HB.descriptio
 
 ## Install
 
-**Homebrew** (macOS and Linux, prebuilt; the formula is published from 0.2.0
-on):
-
-```sh
-brew install davidawad/tap/wherebox
-```
-
-**Release archives.** Every [release](https://github.com/davidawad/wherebox-cli/releases)
-has `wherebox-<version>-<target>.tar.gz` for `x86_64-unknown-linux-gnu`,
-`aarch64-unknown-linux-gnu`, `x86_64-apple-darwin` and `aarch64-apple-darwin`
-(plus a `.zip` for `x86_64-pc-windows-msvc`), and a `SHA256SUMS` file. Each
-archive holds the `wherebox` binary, man pages (`man/`) and shell completions
-(`completions/`). (0.1.0 used `wherebox-cli-v0.1.0-<target>.tar.gz`, without
-man pages or completions.)
+**Release archives.** Each [release](https://github.com/davidawad/wherebox-cli/releases)
+carries `wherebox-<version>-<target>.tar.gz` for the targets it was built on,
+and a `SHA256SUMS` file. Each archive holds the `wherebox` binary, man pages
+(`man/`) and shell completions (`completions/`). (0.1.0 used
+`wherebox-cli-v0.1.0-<target>.tar.gz`, without man pages or completions.)
 
 ```sh
 v=0.2.0 t=aarch64-apple-darwin   # the release you want, and your target
