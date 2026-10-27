@@ -56,7 +56,7 @@ Additional tables for consumables (food, household):
 | Table | Columns | Homebox column |
 |---|---|---|
 | `items` (more) | `kind_preset` (see Presets), shelf-life type (custom field `Shelf Life`: a type name, or `none` for never perishable; see Shelf life), `unit` (ea, g, kg, ml, l, lb, oz, pack), `par_level` (keep at least N on hand), `reorder_qty`, `preferred_vendor`, `product_ref` (UPC/ASIN) | `HB.field.Preset`, `HB.field.Unit`, `HB.field.Par Level`, `HB.field.Reorder Qty`, `HB.field.Vendor`, `HB.field.Product Ref` |
-| `lots` | `item_id`, `qty`, `acquired_at`, `opened_at`, `best_by` (the printed best-by date, perishables only: an override), `frozen_at`, `confirmed_at` (last `lot confirm`), `location_id` (fridge / freezer / pantry shelf), `status` (sealed, open, consumed, discarded), `unit_price`, `source_ref` (the purchase row, unique); `expires_at` is retired (always empty: expiry is computed, see Shelf life) | flattened on export: one HB row per open lot, `HB.field.Best By`, `HB.field.Expires` (computed, export only), `HB.field.Lot Price`, `HB.field.Lot Ref` |
+| `lots` | `item_id`, `qty`, `acquired_at`, `opened_at`, `best_by` (the printed best-by date, perishables only: an override), `frozen_at`, `confirmed_at` (last `lot confirm`), `location_id` (fridge / freezer / pantry shelf), `status` (sealed, open, consumed, discarded), `unit_price`, `source_ref` (the purchase row, unique), `vendor` (a store id or any text; see Stores and sourcing); `expires_at` is retired (always empty: expiry is computed, see Shelf life) | flattened on export: one HB row per open lot, `HB.field.Best By`, `HB.field.Expires` (computed, export only), `HB.field.Lot Price`, `HB.field.Lot Ref` |
 | `consumption` | `lot_id`, `qty`, `at`, `reason` (eaten, used, spoiled, discarded) | - |
 
 Each property is its own wherebox: a separate profile and database
@@ -89,10 +89,12 @@ wherebox export [--format homebox|csv|json|jsonl] [--at <loc>] [--owner]
 wherebox preset ls|show <name>
 wherebox par <item> <n> [--reorder Q]
 wherebox shelf-life ls | show <type> | set <type> [--pantry 5d --fridge 7d --freezer 6m --opened 3d --synonym S...] | unset <type>
-wherebox lot add|ls|edit|rm|confirm <item> [--qty N]
+wherebox lot add|ls|edit|rm|confirm <item> [--qty N] [--vendor STORE]
 wherebox shopping [--profile P | --all-profiles] [--within 7d] [--since 18] [--checklist] [--include-list L]
 wherebox list new|ls|show|rm|add|edit|drop|check|shop|pin|unpin|explain|import   # see Lists and matching
 wherebox match <query> | cohort new|ls|show|add|rm
+wherebox store add|ls|show|edit|rm|layout|use   # see Stores and sourcing
+wherebox source add|ls|edit|rm
 wherebox report insurance [--profile P | --all-profiles] [--owner O] [--min-value N] [--bought-after DATE] [--format csv|xlsx|pdf|html]
 wherebox db regroup-consumables [--dry-run]
 wherebox report warranties [--expiring 90d] [--all-profiles] [--include-expired]
@@ -511,8 +513,8 @@ wherebox list ls | show <l> | rm <l>
 wherebox list add <l> <entry> [--qty --unit --note --asin --sku --upc --product-ref --url --label --preset --at --cohort --any N... --exclude N... --optional --fuzzy B --threshold T]
 wherebox list edit <l> <entry> [same flags] [--name N] [--required] [--clear FIELD]
 wherebox list drop <l> <entry>
-wherebox list check <l> [-P P | --all-profiles] [--threshold T]
-wherebox list shop <l> [-P P | --all-profiles]
+wherebox list check <l> [-P P | --all-profiles] [--threshold T] [--store S]
+wherebox list shop <l> [-P P | --all-profiles] [--store S]
 wherebox list pin <l> <entry> <item> [-P P] | unpin <l> <entry> [<pin>|--all]
 wherebox list explain <l> <entry> [-P P]
 wherebox list import <l> <file>
@@ -542,6 +544,208 @@ bullets (`-`, `*`, `- [ ]`, `1.`) and `#` comment lines skipped, text in
 parentheses or after a comma becomes the note. A line that is a URL becomes
 a `url` matcher: indented, on the entry above; else its own entry (named from
 the URL's slug or ASIN). No network.
+
+## Stores and sourcing
+
+Most food is bought at physical grocery chains whose catalogs are on their
+own websites, not on Amazon. Stores and their products live in each
+property's database (a profile's stores are the ones near that property),
+so `list check` and `list shop` can say, for what is missing, which product
+to buy at the store that serves the profile, where it sits in that store,
+and in what order to walk the aisles. No network: URLs and category text
+are stored and parsed, never fetched.
+
+### Stores
+
+| Table | Columns |
+|---|---|
+| `stores` | `id` (a slug, e.g. `sprouts-north`), `chain` (free text, e.g. `Sprouts`; compared case-insensitively), `name` (default: the chain), `address`, `website`, `notes`, `layout` (optional, see Layouts), `created_at`, `updated_at` |
+| `chain_layouts` | `chain` (lower case), `layout`: the default layout of every store of the chain |
+| `store_products` | `id` (integer), `food` (the canonical food it is sourced for, as typed) and `food_key` (its normalized name), `item_id` (optional link to an item), `store_id` or `chain` (one row covers one store, or every store of a chain; at least one is set), `name` (the store's product name), `brand`, `size` (free text, `16 oz`, `1 lb bag`), `price` (USD cents) and `price_seen` (date), `url`, `sku`, `plu`, `upc`, `section`, `aisle` (free text), `notes`, `created_at`, `updated_at` |
+| `lots` (more) | `vendor`: where the lot was bought, a store id (see `store ls`) or any text |
+
+A profile's stores are an ordered list in its config table; the first is
+its default store:
+
+```toml
+[profiles.beach-house]
+title = "Beach House"
+stores = ["sprouts-north", "aldi-main"]
+```
+
+`wherebox store use <store>... [-P P]` writes that list (through
+`toml_edit`: the rest of the file is kept). The store in use for a command
+is `--store S`, else the profile's first store; without a profile (or with
+no `stores`) there is no default store and any store's product is offered.
+A configured store id missing from the database is a warning, not an
+error.
+
+```
+wherebox store add <id> --chain C [--name N] [--address A] [--website URL] [--notes T] [--layout L]
+wherebox store ls [--chain C]
+wherebox store show <store>
+wherebox store edit <store> [--chain --name --address --website --notes --layout L] [--clear FIELD]
+wherebox store rm <store> [--force]          # --force also removes the store's own products
+wherebox store layout [<store> | --chain C] [L] [--clear]   # show, or set, a layout
+wherebox store use <store>... [-P P]         # the profile's stores, first = default
+```
+
+`<store>` is a store id, or a unique (case-insensitive) store name. `store
+rm` refuses while store products reference the store, unless `--force`.
+
+### Store products (sourcing)
+
+```
+wherebox source add <food> (--store S | --chain C) [--name N] [--brand B] [--size "16 oz"]
+    [--price 4.99 [--seen DATE]] [--url URL] [--sku --plu --upc] [--section S] [--aisle A]
+    [--note T] [--category TEXT] [--item ITEM]
+wherebox source ls [food] [--store S | --chain C]
+wherebox source edit <id> [same flags] [--clear FIELD]
+wherebox source rm <id>...
+```
+
+`<food>` names the canonical food: a list entry name (`walnuts`), a food
+lexicon noun, or anything else; `--item` also links it to an item. Many
+products per food: one per chain at least, one per store where a store
+differs. `--name` defaults to the food. `--seen` defaults to today when a
+price is given. `--category` is the store website's category text
+(breadcrumbs such as `Pantry > Nut Butters`); it is only used to guess the
+section, and not stored.
+
+An entry is linked to a product (strongest first):
+
+1. **name**: the product's `food_key` is the entry's normalized name (or
+   one of its `any` names), see Fuzzy names;
+2. **item**: the product's `item_id` is one of the entry's matches;
+3. **head noun**: the entry's name names the food (or the food names the
+   entry) by head noun at a head score of 0.85 or more and not as a
+   compound (`walnuts` and `walnut halves`; not `walnuts` and `walnut
+   oil`).
+
+`source ls <food>` lists the products linked to `<food>` that way.
+
+The product chosen for an entry at a store: among the linked products,
+the one at **that store** (`store_id`), else one for **its chain** (a
+`chain` row, or a row of another store of the same chain), else **another
+store**: the profile's other stores in order, then any store. Ties go to
+the stronger link, then the lowest id. The tier is reported as
+`source_tier` = `store`, `chain` or `other`.
+
+### Sections and aisles
+
+Sections are a fixed vocabulary, aliases in parentheses:
+
+`produce`, `bulk`, `meat`, `seafood`, `deli`, `bakery`, `dairy`, `eggs`,
+`frozen`, `pantry` (`dry goods`, `pantry/dry goods`, `dry`), `canned`,
+`baking`, `spices` (`spice`, `herbs & spices`), `oils-vinegar` (`oils`,
+`oil`, `vinegar`, `oils/vinegar`), `snacks`, `beverages` (`drinks`),
+`supplements` (`vitamins`, `supplements/vitamins`), `household`,
+`health-beauty` (`health/beauty`, `health`, `beauty`), `checkout`,
+`special-buys` (`center`, `center/special-buys`, `specials`).
+
+Input is lower-cased with spaces, `/` and `&` read as `-`; any other value
+is a **custom** section (stored as its slug, `hot-bar`), reported with
+`custom: true`. An aisle is free text (`7`, `12B`, `bins 3-4`); its first
+number orders products within a section.
+
+**Section guess**: `source add` without `--section` guesses one from, in
+order, `--category`, the words of the URL's path, the product name and the
+food, with a fixed table (deterministic, no network):
+
+1. phrases first: `peanut butter`, `almond butter`, `nut butter`, `coconut
+   milk` -> pantry or canned, `olive oil` -> oils-vinegar, `baking soda`,
+   `baking powder` -> baking, `trail mix` -> snacks...;
+2. the modifiers `frozen` -> frozen, `canned`/`tinned` -> canned, `bulk`
+   -> bulk;
+3. for a product name or food, its head noun (see Head nouns: `Chicken
+   Broth` is broth, pantry); for category and URL text, any word;
+4. word table (in this priority): spices (`spice`, `seasoning`,
+   `cinnamon`, `paprika`, `cumin`, `salt`...), oils-vinegar (`oil`,
+   `vinegar`), baking (`flour`, `sugar`, `yeast`, `cocoa`), supplements
+   (`supplement`, `vitamin`, `capsule`), health-beauty (`shampoo`, `soap`,
+   `lotion`, `toothpaste`...), household (`detergent`, `cleaner`, `paper`
+   towels, `foil`...), beverages (`juice`, `soda`, `coffee`, `tea`,
+   `kombucha`...), snacks (`snack`, `chip`, `cracker`, `pretzel`, `popcorn`,
+   `bar`), bakery (`bread`, `bagel`, `tortilla`, `muffin`), deli (`deli`,
+   `hummus`, `salami`), eggs (`egg`), dairy (`milk`, `cheese`, `yogurt`,
+   `butter`, `cream`), seafood (`fish`, `salmon`, `shrimp`, `cod`...), meat
+   (`beef`, `chicken`, `pork`, `turkey`, `bacon`, `sausage`...), produce
+   (`fruit`, `vegetable`, `banana`, `lime`, `lemon`, `avocado`, `garlic`,
+   `onion`, `berry`...), pantry (`rice`, `pasta`, `bean`, `oat`, `cereal`,
+   `walnut`, `almond`, `seed`, `sauce`, `honey`, `broth`...), and the
+   section names and aliases themselves.
+
+The guessed section is stored like a given one and reported with
+`section_guessed` and its basis (`category`, `url`, `name`, `food`). No
+match leaves the section empty.
+
+### Layouts
+
+A layout is the order of sections from the entrance to the checkout,
+optionally with the aisles of each section. Written on the command line as
+a comma list, `section[=aisles]`:
+
+```
+produce, bulk=1-2, bakery, deli, meat, seafood, pantry=3-7, canned=5, snacks=8, dairy=11, frozen=12-13, checkout
+```
+
+A store's layout is its own, else its chain's (`store layout --chain
+Sprouts L`, set once for every store of the chain), else the **generic
+default**: produce, bulk, bakery, deli, meat, seafood, pantry, canned,
+baking, spices, oils-vinegar, snacks, beverages, supplements,
+health-beauty, household, special-buys, eggs, dairy, frozen, checkout
+(produce first, cold and frozen last, checkout at the end). `store show`
+and `store layout` report which one applies (`layout_source` = `store`,
+`chain`, `default`). A layout's aisles are shown for a product that has no
+aisle of its own.
+
+### List check and list shop
+
+`list check <l> [-P P | --all-profiles] [--store S]`: every `missing` or
+`short` entry (and every `open` wishlist entry) carries the chosen product
+for the profile's store: `store`, `store_name`, `source_tier`,
+`source_id`, `product`, `brand`, `size`, `price`, `url`, `section`,
+`aisle`, `source_note`, and `buy` (the text column: `Sprouts North: Raw
+Walnut Halves (bulk, aisle 2; top bins)`, or `no source at Sprouts North`
+when no product is linked; `no source` without a store). Other entries
+have these fields null. With `--all-profiles` each profile uses its own
+store (`--store` applies to all).
+
+`list shop <l> [-P P | --all-profiles] [--store S]` prints the walk: the
+missing and short entries (ambiguous and unit-mismatch ones are left out
+with a note, as before), grouped by section in the store's layout order,
+then by aisle number (no number last), then by name, numbered 1..n across
+the walk:
+
+```
+Nutty pudding at Sprouts North (sprouts-north), layout: chain Sprouts
+Produce
+   1. 2 ea      Organic Limes                 aisle 1
+Bulk
+   2. 200 g     Raw Walnut Halves             aisle 2   top bins
+Ask / unsorted
+   3. 1 l       milk                          no source at Sprouts North
+```
+
+The quantity is what to buy (want, or want - have); when the product's
+size converts to the entry's unit, the packs to take are added (`200 g`
+of a `16 oz` bag is `1 x 16 oz`). Sections not in the layout come before
+`checkout` (else last), in name order. Entries with no product, or a
+product with no section, go in a final `ask / unsorted` group. JSON keeps
+the `shopping` row shape (`list shop` rows still merge into `shopping
+--include-list`), with `step`, `section`, `aisle`, `product`, `packs`,
+`store`, `source_tier`, `source_note` added and `vendor` the store's name
+when a product was found; `route` in the envelope gives the store and the
+layout source per profile.
+
+### Export and import
+
+`export --format json` (and yaml, toon) carries `stores`, `chain_layouts`
+and `store_products` arrays next to `data`; `import` of such an envelope
+creates or updates them (stores by id, chain layouts by chain, products by
+id when the id is free or the same product, else as new rows) in the same
+transaction as the items, `--dry-run` included. Lots export and import
+their `vendor`. Homebox CSV is unchanged (stores do not travel).
 
 ## Insurance report
 
