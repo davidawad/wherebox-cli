@@ -409,8 +409,16 @@ Head nouns: a product name is cut into segments at commas, parentheses,
 normalized word that is not a modifier (`organic`, `frozen`, `raw`,
 `whole`, `wild`, `boneless`...), packaging (`bag`, `head`, `bunch`, `jar`,
 `can`, `loaf`...) or a cut (`halves`, `slices`, `root`, `cloves`,
-`leaves`...). `Hemp Seed Organic, 12 Ounce` is seeds, `Walnut Halves` walnuts,
-`Chili Garlic Sauce` a sauce.
+`leaves`...), except that a food form (`sauce`, `paste`, `cereal`, `mix`,
+`chips`, `bar`, `powder`, `juice`, `oil`, `tea`, `candy`, `seasoning`,
+`dressing`, `syrup`, `cookies`...) is the head wherever it sits, since
+brands often put it first or mid-name. `Hemp Seed Organic, 12 Ounce` is
+seeds, `Walnut Halves` walnuts, `Chili Garlic Sauce` and `Huy Fong Sauce
+Chili Garlic` sauces. A product whose segment heads (outside `in`/`with`...
+segments) include a food form is that form: a phrase whose head noun is
+another word is at most a modifier of it, even in a segment of its own
+(`blueberry` in `Chex Cereal, Blueberry`; `garlic` in `Garlic Powder`, which
+does match `garlic powder`).
 
 Fuzzy names: lower case; punctuation to spaces; pack and size tokens dropped
 (`12-pack`, `pack of 6`, `5oz`, `16 fl oz`, `2 lb`, `x3`, bare numbers);
@@ -425,7 +433,8 @@ query's head noun must be the head noun of a segment of the candidate: a
 shared modifier alone is not enough, and a compound product in which the
 query's noun is only a flavour or modifier (`garlic` in `Chili Garlic
 Sauce`, `berry` in `Berry Trail Mix`, `cherry` in `Lost Cherry Eau de Parfum
-Spray`) scores at most 0.5. Synonyms widen food nouns: an entry named like a
+Spray`) scores at most 0.5. Synonyms widen food nouns only where the synonym is
+the product's head noun (not a flavour of a cereal or bar): an entry named like a
 lexicon key or a shelf-life type also matches candidates whose head noun is
 one of its synonyms (`berries`: blueberries, raspberries, strawberries,
 blackberries; `nut milk`: almond, macadamia, cashew milk; `citrus`: lime,
