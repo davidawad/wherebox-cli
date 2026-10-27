@@ -67,12 +67,15 @@ the same objects as JSON. A single-object result prints as one line.
 | `attachment get` | `attachment_get` | `{id, dest, bytes}` |
 | `lot add` / `edit` / `ls` | `lot` / `lots` | [Lot](#lot) + `item`, `asset_id`, `item_id` |
 | `use`, `eat`, `toss` | `consumption` | `{item, item_id, reason, qty, unit, on_hand, lots: [{lot, taken, left, status}]}` |
-| `expiring` | `expiring` | array of `{item, asset_id, lot, qty, unit, due, date_kind, days_left, state, frozen_at, location}`; meta `within_days` |
-| `export -f json\|jsonl\|yaml\|toon` | `export` | array of Item + `lots` (all lots, any status); meta `profile` |
+| `lot confirm` | `lots` | array of [Lot](#lot) + `item`, `asset_id`, `item_id` (the item's active lots); meta `on_hand`, `on_hand_basis` |
+| `expiring` | `expiring` | array of `{item, asset_id, lot, qty, unit, due, expires_at, expiry_basis, why, shelf_life, storage, days_left, state, frozen_at, location}` (perishable lots only; `due` = `expires_at`, computed); meta `within_days` |
+| `shelf-life ls` | `shelf_life` | array of `{name, group, description, pantry, fridge, freezer, opened, origin}` (figures as text, `1 week`; null: not recommended there); `origin` ∈ `built-in config built-in+config` |
+| `shelf-life show` / `set` / `reset` | `shelf_life` | `{name, group, description, pantry, fridge, freezer, opened, synonyms, not, source, origin}` (figures as written, `7d`) |
+| `export -f json\|jsonl\|yaml\|toon` | `export` | array of Item + `lots` (all lots, any status), without the computed fields (`shelf_life` is the stored type or null; no `shelf_life_basis`, `on_hand`, `on_hand_basis`, `expires_at`, `expiry_basis`; lots without `shelf_life`, `storage`, `expires_at`, `expiry_basis`, `presumed_used_up`); meta `profile` |
 | `import` | `import` | array of `{line, action, id, asset_id, name, location, lots, error}`; meta `format`, `dry_run`, `batch`, `summary`, `ignored_columns`, `warnings` |
 | `profile ls` / `show` / `init` | `profiles` / `profile` / `profile_init` | `{name, title, address, rented, db_path, exists, active, source}` (+ `items`, `locations`, `value` in `show`) |
-| `preset ls` | `presets` | array of `{name, category, description, tracks, shelf_life, intervals, alert_days, origin}` (`shelf_life`, `intervals`: text such as `fridge 3-5 days, freezer 4-12 months`) |
-| `preset show` | `preset` | the preset as in its TOML file: `{name, description, category, tracks, alert_days, notes, shelf_life: {date, fridge, freezer, pantry, opened}, intervals: {replace, inspect, service, appraise, warranty}, defaults: {unit, labels, fields}, sources: [{covers, cite, url}], origin}` |
+| `preset ls` | `presets` | array of `{name, category, description, tracks, shelf_life_type, intervals, alert_days, origin}` (`intervals`: text such as `replace every 10 years`) |
+| `preset show` | `preset` | the preset as in its TOML file: `{name, description, category, tracks, shelf_life_type, alert_days, notes, intervals: {replace, inspect, service, appraise, warranty}, defaults: {unit, labels, fields}, sources: [{covers, cite, url}], origin}` |
 | `par` | `item` | Item |
 | `shopping` | `shopping` | array of `{item, qty, unit, vendor, product_ref, reason, detail, last_bought, cadence_days, overdue_days, location, profile, asset_id}`; `reason` ∈ `below par, expiring, reorder, list` (`list`: from `--include-list`; the last three fields are set on reorders); meta `within_days`, `dropped` (recurring items last bought before `--since`) |
 | `list new` | `list` | `{slug, name, type, profile, notes, threshold, entries, path}` |
@@ -80,10 +83,10 @@ the same objects as JSON. A single-object result prints as one line.
 | `list show`, `list import` | `list` | array of entries `{n, name, qty, unit, optional, note, matcher, asin, sku, upc, product_ref, url, any, label, preset, at, cohort, exclude, pins, fuzzy, threshold}` (matcher fields are arrays; `matcher` a one-line summary); meta `list` (the header), `skipped` (import) |
 | `list add` / `edit` / `pin` / `unpin` | `list_entry` | one entry + `list` (slug) |
 | `list drop`, `list rm`, `cohort rm` | `removed` | the entry; for files `{path, trashed_to}` |
-| `list check` | `list_check` | array of `{profile, n, entry, want, unit, have, expired, state, status, optional, ambiguous, matched, matches, note}`; `state` ∈ `have short missing ambiguous unit-mismatch` (wishlists: `open fulfilled`), `status` the text shown (`short (have 0.5 of 2)`, `missing (1.9 l expired)`, `missing (lent out)`); each of `matches` is `{item, item_id, asset_id, location, status, tier, score, via, qty, on_hand, item_unit, lent, expired, basis}` with `tier` ∈ `identifier url pinned attribute name`, `qty` in the entry's unit (null: unit mismatch), `basis` ∈ `unit, size from name, unit mismatch`; meta `list`, `threshold`, `ready`, `verdict` (`ready` / `missing N of M`), `verdicts` (`{profile: {ready, verdict}}`) |
+| `list check` | `list_check` | array of `{profile, n, entry, want, unit, have, on_hand_basis, expired, state, status, optional, ambiguous, matched, matches, note}`; `state` ∈ `have short missing ambiguous unit-mismatch` (wishlists: `open fulfilled`), `status` the text shown (`short (have 0.5 of 2)`, `missing (1.9 l expired)`, `missing (lent out)`); each of `matches` is `{item, item_id, asset_id, location, status, tier, score, via, qty, on_hand, on_hand_basis, item_unit, lent, expired, basis}` with `tier` ∈ `identifier url pinned attribute name`, `qty` in the entry's unit (null: unit mismatch), `basis` ∈ `unit, size from name, unit mismatch`; meta `list`, `threshold`, `ready`, `verdict` (`ready` / `missing N of M`), `verdicts` (`{profile: {ready, verdict}}`) |
 | `list shop` | `shopping` | rows as `shopping`, `reason` = `list`; meta `list` |
 | `list explain` | `explain` | array of `{item, asset_id, item_id, location, identifier, url, pinned, attribute, name, name_score, excluded, location_ok, tier, score, via, result}` (each tier: what hit, else null); meta `entry`, `threshold`, `ambiguous` |
-| `match` | `match` | array of `{item, asset_id, item_id, tier, score, via, on_hand, unit, expired, location, status, profile}`; meta `query`, `threshold`, `ambiguous` |
+| `match` | `match` | array of `{item, asset_id, item_id, tier, score, via, on_hand, on_hand_basis, unit, expired, location, status, profile}`; meta `query`, `threshold`, `ambiguous` |
 | `cohort new` / `show` / `add`, `cohort ls` | `cohort` / `cohorts` | `{slug, name, notes, matcher, includes, path}` + the matcher fields |
 | `report insurance` | `insurance` | `{header, properties: [{name, profile, address, rented, coverage, rooms: [{room, items, subtotal}], total}], grand_total, flagged, gap_counts: {gap: n}, gaps: [{property, location, name, asset_id, gaps}]}`; each of `items` is `{section, property, coverage, room, location, name, asset_id, quantity, manufacturer, model_number, serial_number, purchase_time, purchase_from, purchase_price, replacement_value, unit_value, line_value, value_basis, flag, photo, photo_paths, receipt, receipt_paths, owner_entity, gaps, profile}`; meta `header`. `--format csv\|tsv\|jsonl` stream the same item records plus `room subtotal`, `property total`, `grand total` (with `line_value`) and `gap` rows (the `section` column) |
 | `report warranties` | `warranties` | array of `{warranty_expires, days_left, state, name, asset_id, location, manufacturer, model_number, serial_number, purchase_time, purchase_from, warranty_details, receipt, profile}`; meta `within_days` |
@@ -104,7 +107,12 @@ to stderr); with any other format they print the record shown above.
 | `id` | string | ULID, stable forever |
 | `asset_id` | string | `000-001`, assigned on creation |
 | `name`, `description` | string | |
-| `quantity` | integer | for items with lots: what is left on hand, rounded up |
+| `quantity` | integer | for items with lots: what is logged as left, rounded up |
+| `on_hand` | number | estimated on hand: lots not presumed used up (docs/SPEC.md, "Estimated on hand"); items without lots: `quantity` |
+| `on_hand_basis` | string | `logged`, or `estimated` when some active lot is presumed used up (text output shows `~2`) |
+| `shelf_life` | string \| null | shelf-life type (null: never perishable) |
+| `shelf_life_basis` | string \| null | how the type was found: `explicit` (`--shelf-life`), `name`, `preset` |
+| `expires_at`, `expiry_basis` | string \| null | the next expiry among its lots (computed, or `printed` best-by); null for non-perishables |
 | `location` | string \| null | full path, `Lake House / Garage / Shelf 2` |
 | `status` | string | `owned lent stored disposed sold lost gifted` |
 | `value` | number \| null | replacement value, else purchase price |
@@ -124,9 +132,14 @@ to stderr); with any other format they print the record shown above.
 
 ### Lot
 
-`{id, qty, unit, status, acquired_at, opened_at, expires_at, best_by,
-frozen_at, location, unit_price, source_ref}`; `status` ∈ `sealed open
-consumed discarded`, `location` is the lot's own place or (in `lot ls`) the
+`{id, qty, unit, status, acquired_at, opened_at, best_by, frozen_at,
+thawed_at, confirmed_at, shelf_life, storage, expires_at, expiry_basis,
+presumed_used_up, location, unit_price, source_ref}`; `status` ∈ `sealed open
+consumed discarded`, `best_by` the printed date (perishables only),
+`storage` ∈ `pantry fridge freezer`, `expires_at` computed (or the printed
+best-by; `expiry_basis` ∈ `computed printed`; null for non-perishables),
+`presumed_used_up` true when past its expiry or (non-perishables) older
+than the item's reorder cadence, `location` is the lot's own place or (in `lot ls`) the
 item's, `unit_price` is dollars for one unit, `source_ref` the purchase row
 (import ref) the lot came from.
 

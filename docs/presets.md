@@ -6,22 +6,19 @@ them; `wherebox preset show NAME` prints one with its sources.
 
 ```sh
 wherebox add Ribeye --preset meat.raw --at "Kitchen / Fridge"
-# meat.raw: use by 2026-01-04 (3-5 days in the fridge from purchase on 2026-01-01)
-wherebox lot add Ribeye 2 --at "Garage / Chest Freezer"     # use by +4 months, frozen today
+# raw-beef (name): expires 2026-01-04 (fridge 3 days from 2026-01-01 (acquired); ...)
+wherebox lot add Ribeye 2 --at "Garage / Chest Freezer"     # expires in 4 months
 ```
 
 ## What a preset fills in
 
-* **Lot dates** (`[shelf_life]`). `add --preset` with a shelf-life preset
-  starts a lot (acquired today unless `--acquired`); `lot add` dates new lots
-  of an item with a preset. Where the lot is kept decides the figure: the
-  nearest segment of the lot's location (else the item's) named like a
-  freezer (`Freezer`, `Chest Freezer`, `Freezer drawer`), a fridge (`Fridge`,
-  `Refrigerator`) or a pantry (`Pantry`, `Cupboard`, `Larder`). An unknown
-  place uses the fridge figure, else the pantry, else the freezer. In the
-  freezer the clock starts at `frozen_at` (set to the acquired date when
-  missing). An opened lot is capped by the `opened` figure. A range such as
-  `3-5d` fills with its shorter end. Dates given on the command line win.
+* **A default shelf-life type** (`shelf_life_type`). Presets store no lot
+  dates: expiry is computed from the item's shelf-life type and where each
+  lot is kept (docs/SPEC.md, "Shelf life"; `wherebox shelf-life ls`). A
+  food preset's type applies when the item's name does not classify it and
+  it has no `--shelf-life`; `add --preset` with such a preset starts a lot
+  (acquired today unless `--acquired`). Non-food presets (household,
+  toiletry, medicine, supplement, tools...) are never perishable.
 * **Service dates** (`[intervals]`) as custom fields, counted from the item's
   `Installed` field, else its purchase date: `Replace By` (not rolled
   forward, so an overdue replacement shows as past), `Next Inspection`,
@@ -30,7 +27,11 @@ wherebox lot add Ribeye 2 --at "Garage / Chest Freezer"     # use by +4 months, 
   date.
 * **Defaults** (`[defaults]`): `unit`, `labels`, custom `fields` for new items.
 * **Alerts**: `alert_days` widens `wherebox expiring` for the preset's items
-  (medicine 30 days, documents 90) unless `--within` is given.
+  unless `--within` is given (only perishables expire, so this matters for
+  food presets).
+* **Cadence**: a `[cadence]` table in `config.toml` (`household = "60d"`,
+  by preset name or category) sets how long a non-perishable lot is
+  presumed on hand when the item has no learned reorder cadence.
 * **Reports**: presets with category `food` or `consumable` are left out of
   the insurance report; presets that track `serial` make a missing serial
   number a gap.
@@ -43,7 +44,7 @@ explained in `notes`.
 
 | preset | value | source |
 |---|---|---|
-| food (`meat.raw`, `meat.ground`, `poultry.raw`, `seafood.raw`, `eggs`, `bread`, `leftovers`, `frozen`, `pantry`, `condiment`) | fridge, freezer and pantry shelf life | USDA FSIS FoodKeeper data, version 128 (<https://catalog.data.gov/dataset/fsis-foodkeeper-data>); each preset names the FoodKeeper product ids it uses |
+| food (`meat.raw`, `meat.ground`, `poultry.raw`, `seafood.raw`, `eggs`, `bread`, `leftovers`, `frozen`, `condiment`) | `shelf_life_type` | the figures are the type's: `shelf-life/types.toml` cites USDA FSIS FoodKeeper and the FDA / FoodSafety.gov Cold Food Storage Chart per group (`wherebox shelf-life show TYPE`) |
 | `frozen`, `condiment` (notes) | frozen food safe indefinitely; opened mayonnaise 2 months | USDA FSIS Cold Food Storage Chart (<https://www.foodsafety.gov/food-safety-charts/cold-food-storage-charts>) |
 | `smoke-detector` | replace every 10 years, test monthly | NFPA (<https://www.nfpa.org/education-and-research/home-fire-safety/smoke-alarms>) |
 | `fire-extinguisher` | inspect monthly, maintain yearly | NFPA 10 (<https://www.nfpa.org/codes-and-standards/nfpa-10-standard-development/10>) |
@@ -51,8 +52,9 @@ explained in `notes`.
 | `hvac` | yearly professional check-up | ENERGY STAR Maintenance Checklist |
 | `medicine`, `supplement`, `first-aid` (30), `document` (90), `appliance`, `electronics`, `tool`, `furniture` (90) | `alert_days` | wherebox policy (docs/SPEC.md), not an external fact |
 
-Left unset for lack of a single citable figure: dairy, produce, beverage and
-alcohol shelf lives (FoodKeeper varies by product; the notes quote examples),
+No type for `dairy`, `produce`, `beverage`, `alcohol` and `pantry` (one
+figure cannot cover them: dairy and produce items classify by name; dry and
+canned goods never expire),
 CO alarm replacement (maker's schedule), vehicle/generator/water-heater
 service, warranty terms, and reappraisal intervals for valuables.
 
@@ -67,15 +69,9 @@ name = "meat.raw"                 # lowercase letters, digits, '.', '-', '_'
 description = "Raw beef, veal, lamb and pork"
 category = "food"                 # food consumable safety durable valuable document other
 tracks = ["use_by", "frozen_at"]  # see below
+shelf_life_type = "raw-beef"      # optional (food): see `wherebox shelf-life ls`
 alert_days = 2                    # optional
 notes = "free text"               # optional
-
-[shelf_life]                      # optional
-date = "use_by"                   # which lot date to fill: use_by (expires_at) or best_by
-fridge = "3-5d"                   # d, w, m, y; a range fills with its shorter end
-freezer = "4-12m"
-pantry = "1y"
-opened = "2m"                     # after opening
 
 [intervals]                       # optional
 replace = "10y"
@@ -90,10 +86,13 @@ labels = ["food"]
 fields = { Hazmat = "yes" }
 
 [[sources]]                       # one per source; `covers` names the values it backs
-covers = "fridge, freezer"
-cite = "USDA FSIS FoodKeeper data, version 128: Beef steaks (#40)"
-url = "https://catalog.data.gov/dataset/fsis-foodkeeper-data"
+covers = "replace"
+cite = "NFPA: replace smoke alarms every 10 years"
+url = "https://www.nfpa.org/education-and-research/home-fire-safety/smoke-alarms"
 ```
+
+A `[shelf_life]` table (preset shelf-life figures before schema v3) is
+accepted and ignored.
 
 `tracks` is descriptive (shown by `preset show`, used for `serial` in the
 insurance report): `use_by best_by opened_at frozen_at expiration
