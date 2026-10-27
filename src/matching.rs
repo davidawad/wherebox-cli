@@ -529,6 +529,53 @@ const FORMS: &[&str] = &[
     "crumble", "kernel", "root", "leaf", "leave", "clove", "stalk", "sprig", "stem",
 ];
 
+/// Food forms: what a product is when its name has one, wherever it sits
+/// (`Huy Fong Sauce Chili Garlic` is a sauce, `Chex Cereal, Blueberry` a
+/// cereal). Another food in the name is only its flavour.
+const FOOD_FORMS: &[&str] = &[
+    "sauce",
+    "paste",
+    "cereal",
+    "mix",
+    "chip",
+    "crisp",
+    "bar",
+    "powder",
+    "juice",
+    "oil",
+    "tea",
+    "candy",
+    "gummy",
+    "seasoning",
+    "dressing",
+    "vinaigrette",
+    "marinade",
+    "rub",
+    "spread",
+    "jam",
+    "jelly",
+    "preserve",
+    "syrup",
+    "extract",
+    "flavoring",
+    "cracker",
+    "cookie",
+    "drink",
+    "soda",
+    "smoothie",
+    "ketchup",
+    "mayo",
+    "mayonnaise",
+    "salsa",
+    "broth",
+    "soup",
+    "granola",
+];
+
+fn is_form(t: &str) -> bool {
+    FOOD_FORMS.contains(&t)
+}
+
 fn skipped(t: &str) -> bool {
     MODIFIERS.contains(&t) || PACKAGING.contains(&t) || FORMS.contains(&t)
 }
@@ -545,33 +592,40 @@ pub struct Segment {
     /// Tokens that name the product (modifiers and packaging dropped).
     pub core: Vec<String>,
     pub head: Option<String>,
+    /// The segment follows `in`/`with`/`for`... (`Tuna in Olive Oil`): it
+    /// does not say what the product is.
+    pub trailing: bool,
 }
 
 /// The segments of a product name, for head-noun matching.
 pub fn segments(name: &str) -> Vec<Segment> {
     let lower = name.to_lowercase().replace(" - ", ",").replace(" – ", ",");
-    let mut parts: Vec<String> = Vec::new();
+    let mut parts: Vec<(String, bool)> = Vec::new();
     for chunk in lower.split([',', ';', ':', '|', '(', ')', '[', ']', '/', '+']) {
         let mut cur = String::new();
+        let mut trailing = false;
         for w in chunk.split_whitespace() {
             let bare = w.trim_matches(|c: char| !c.is_alphanumeric());
             if SEGMENT_WORDS.contains(&bare) && !cur.trim().is_empty() {
-                parts.push(std::mem::take(&mut cur));
+                parts.push((std::mem::take(&mut cur), trailing));
+                trailing = true;
                 continue;
             }
             cur.push(' ');
             cur.push_str(w);
         }
-        parts.push(cur);
+        parts.push((cur, trailing));
     }
     parts
         .iter()
-        .map(|p| {
+        .map(|(p, trailing)| {
             let tokens = name_tokens(p);
             let core: Vec<String> = tokens.iter().filter(|t| !skipped(t)).cloned().collect();
-            // a name made only of skipped words (`Whole Cloves`) is its own head
-            let head = core.last().or(tokens.last()).cloned();
-            Segment { tokens, core, head }
+            // a food form names the product wherever it is; else the last
+            // word that is not skipped; a name made only of skipped words
+            // (`Whole Cloves`) is its own head
+            let head = core.iter().rev().find(|t| is_form(t)).or(core.last()).or(tokens.last()).cloned();
+            Segment { tokens, core, head, trailing: *trailing }
         })
         .filter(|s| !s.tokens.is_empty())
         .collect()
@@ -583,9 +637,17 @@ fn same_word(a: &str, b: &str) -> bool {
     a == b || (a.len().min(b.len()) >= 6 && strsim::jaro_winkler(a, b) >= TOKEN_SIM)
 }
 
-/// The head noun of a phrase (`chicken breasts` -> `breast`).
+/// The head noun of a phrase (`chicken breasts` -> `breast`, `garlic
+/// powder` -> `powder`).
 pub fn phrase_head(tokens: &[String]) -> Option<&String> {
-    tokens.iter().rev().find(|t| !skipped(t)).or(tokens.last())
+    tokens.iter().rev().find(|t| is_form(t)).or_else(|| tokens.iter().rev().find(|t| !skipped(t))).or(tokens.last())
+}
+
+/// The food forms a product name says it is: the heads of its segments
+/// that are forms, outside `in`/`with`... trailers (`Chex Cereal,
+/// Blueberry` -> `cereal`).
+pub fn forms(segs: &[Segment]) -> Vec<&str> {
+    segs.iter().filter(|s| !s.trailing).filter_map(|s| s.head.as_deref()).filter(|h| is_form(h)).collect()
 }
 
 /// How a phrase (a shelf-life type, a recipe entry) names a product.
@@ -595,7 +657,8 @@ pub struct HeadMatch {
     /// the name (and its other words are in that segment, more of the
     /// segment named scoring higher); 0.6 when only the head noun is; 0.5
     /// when it only appears as a modifier (`garlic` in `Chili Garlic
-    /// Sauce`); else 0.
+    /// Sauce`), or the product is a food form the phrase is not (`blueberry`
+    /// in `Chex Cereal, Blueberry`); else 0.
     pub score: f64,
     /// The head noun is there, but not as the head: a compound product.
     pub compound: bool,
@@ -605,6 +668,12 @@ pub struct HeadMatch {
 pub fn head_match(phrase: &[String], segs: &[Segment]) -> HeadMatch {
     let none = HeadMatch { score: 0.0, compound: false };
     let Some(ph) = phrase_head(phrase) else { return none };
+    let product = forms(segs);
+    if !product.is_empty() && !product.iter().any(|f| same_word(f, ph)) {
+        // a flavour of a sauce, cereal, bar...: at most a modifier
+        let there = segs.iter().any(|s| s.tokens.iter().any(|x| same_word(x, ph)));
+        return if there { HeadMatch { score: 0.5, compound: true } } else { none };
+    }
     let mut best = none;
     for s in segs {
         let others = phrase.iter().filter(|t| *t != ph);
@@ -912,5 +981,32 @@ mod tests {
         assert_eq!(size_from_name("Oat milk, 64 fl oz"), Some((64.0, "fl oz".into())));
         assert_eq!(size_from_name("Maple syrup 500ml bottle"), Some((500.0, "ml".into())));
         assert_eq!(size_from_name("AA batteries, 24 count"), None);
+    }
+
+    #[test]
+    fn food_forms_are_the_head_wherever_they_sit() {
+        let hm = |phrase: &str, name: &str| head_match(&name_tokens(phrase), &segments(name)).score;
+        // garlic only flavours a sauce, even when the brand puts "Sauce" first
+        assert_eq!(segments("Huy Fong Sauce Chili Garlic 18oz")[0].head.as_deref(), Some("sauce"));
+        assert_eq!(hm("garlic", "Huy Fong Sauce Chili Garlic 18oz"), 0.5);
+        assert_eq!(hm("garlic", "Tuong Ot Toi Viet-Nam Chili Garlic Sauce"), 0.5);
+        assert!(hm("chili sauce", "Huy Fong Sauce Chili Garlic 18oz") >= 0.85);
+        // a flavour in its own segment of a cereal is still a flavour
+        assert_eq!(forms(&segments("Chex Cereal, Blueberry, Gluten Free, 12 oz")), ["cereal"]);
+        assert_eq!(hm("blueberries", "Chex Cereal, Blueberry, Gluten Free, 12 oz"), 0.5);
+        // a form the phrase names is the product
+        assert!(hm("garlic powder", "Garlic Powder") >= 0.85);
+        assert_eq!(hm("garlic", "Garlic Powder"), 0.5);
+        // `in`/`with` trailers do not say what the product is
+        assert!(hm("tuna", "Tuna in Olive Oil, 5 oz") >= 0.85);
+        // no form: the head noun as before
+        for (p, n) in [
+            ("garlic", "Organic Garlic, 1 Head"),
+            ("garlic", "Fresh Garlic 3 lb bag"),
+            ("blueberries", "Wyman's Frozen Wild Blueberries 3 lb"),
+            ("raspberries", "Organic Raspberries 6 oz"),
+        ] {
+            assert!(hm(p, n) >= 0.85, "{p} in {n}");
+        }
     }
 }
