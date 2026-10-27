@@ -380,10 +380,19 @@ highest confidence first, and every match reports its tier and score:
 identifiers (ASIN, SKU, UPC/GTIN, product ref, normalized), URLs (Amazon
 `/dp/<ASIN>`; tracking parameters dropped), pins, labels and presets, then a
 fuzzy product-name match (sizes, pack counts and marketing words dropped;
-threshold `match_threshold`, 0.82). Close fuzzy candidates are flagged
-ambiguous; `exclude` always wins and `at` narrows to a place. Quantities
-convert between g/kg/oz/lb and ml/l/tsp/tbsp/cup (an `ea` item whose name
-says `16 oz` counts as 16 oz); expired lots are reported, not counted.
+threshold `match_threshold`, 0.82). The entry's head noun must name the
+product: `garlic` is not `Chili Garlic Sauce`, `berries` not `Berry Trail
+Mix`, while synonyms widen food nouns (`berries` is had by frozen
+blueberries). Recipes are food lists: only food (by preset, label,
+shelf-life type, fridge/freezer/pantry location or name) is a candidate, so
+a perfume, supplement capsules or cleaning supplies never are, unless an
+identifier or pin says so (`food = false` turns this off per list). Close
+fuzzy candidates are flagged ambiguous; `exclude` always wins and `at`
+narrows to a place. Quantities convert between g/kg/oz/lb and
+ml/l/tsp/tbsp/cup (an `ea` item whose name says `16 oz` counts as 16 oz),
+and for common foods through densities and piece weights (`1 tbsp hemp
+seeds` against a 12 oz bag, `1 clove garlic` against a head); lots presumed
+used up are reported, not counted.
 Details: docs/SPEC.md, "Lists and matching".
 
 ## Homebox CSV
