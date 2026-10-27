@@ -7,9 +7,9 @@
 //!
 //! What a preset fills in:
 //!
-//! * a lot's use-by or best-by date (`[shelf_life]`), from the day it was
-//!   bought, frozen or opened and where it is kept: a location named like a
-//!   freezer, a fridge or a pantry (the lot's location, else the item's);
+//! * nothing on lots: a food preset may name a default shelf-life type
+//!   (`shelf_life_type`), and expiry is computed from it (see
+//!   [`crate::shelf_life`]);
 //! * an item's service dates (`[intervals]`) as custom fields (`Replace By`,
 //!   `Next Inspection`, `Next Service`, `Reappraise By`) from its `Installed`
 //!   field or purchase date, and `warranty_expires` from a warranty term;
@@ -26,7 +26,7 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, Result};
-use crate::store::{Item, Lot};
+use crate::store::Item;
 use crate::util::{date_after, parse_span, Span};
 
 /// The built-in presets, `(name, TOML)`.
@@ -98,20 +98,7 @@ pub const TRACKS: &[&str] = &[
 ];
 
 /// Values that need a citation when set, as named in `[[sources]] covers`.
-const CITED: &[&str] =
-    &["fridge", "freezer", "pantry", "opened", "replace", "inspect", "service", "appraise", "warranty", "alert_days"];
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ShelfLife {
-    /// Which lot date the shelf life fills: `use_by` (expires_at) or `best_by`.
-    pub date: Option<String>,
-    pub fridge: Option<String>,
-    pub freezer: Option<String>,
-    pub pantry: Option<String>,
-    /// After opening (caps the date of an opened lot).
-    pub opened: Option<String>,
-}
+const CITED: &[&str] = &["replace", "inspect", "service", "appraise", "warranty", "alert_days"];
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -154,8 +141,12 @@ pub struct Preset {
     /// Warn this many days before a tracked date.
     pub alert_days: Option<u32>,
     pub notes: Option<String>,
-    #[serde(default)]
-    pub shelf_life: ShelfLife,
+    /// Default shelf-life type of items of this kind (see `wherebox shelf-life ls`).
+    pub shelf_life_type: Option<String>,
+    /// Before schema v3 presets carried shelf-life figures; such a table in
+    /// a user preset is accepted and ignored.
+    #[serde(default, skip_serializing)]
+    pub shelf_life: Option<toml::Value>,
     #[serde(default)]
     pub intervals: Intervals,
     #[serde(default)]
@@ -165,41 +156,6 @@ pub struct Preset {
     /// `built-in` or the override file's path.
     #[serde(skip_deserializing)]
     pub origin: String,
-}
-
-/// Where a lot is kept, from its location's name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Storage {
-    Fridge,
-    Freezer,
-    Pantry,
-}
-
-impl Storage {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Fridge => "fridge",
-            Self::Freezer => "freezer",
-            Self::Pantry => "pantry",
-        }
-    }
-
-    /// The storage named by the nearest segment of a location path
-    /// (`Kitchen / Fridge / Freezer drawer` is a freezer).
-    pub fn from_path(path: &str) -> Option<Self> {
-        crate::store::split_path(path).iter().rev().find_map(|seg| {
-            let s = seg.to_lowercase();
-            if s.contains("freezer") || s.contains("deep freeze") {
-                Some(Self::Freezer)
-            } else if s.contains("fridge") || s.contains("refrigerator") {
-                Some(Self::Fridge)
-            } else if s.contains("pantry") || s.contains("cupboard") || s.contains("larder") {
-                Some(Self::Pantry)
-            } else {
-                None
-            }
-        })
-    }
 }
 
 /// A shelf life or interval: `3-5d`, `12m`, `10y`, `3-5w`.
@@ -245,17 +201,6 @@ fn life(v: &Option<String>) -> Option<Life> {
     v.as_deref().and_then(|s| Life::parse(s).ok())
 }
 
-/// What a preset filled into a lot.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct LotFill {
-    /// `expires_at` or `best_by`.
-    pub field: &'static str,
-    pub date: String,
-    pub storage: &'static str,
-    /// e.g. "3-5 days in the fridge from 2026-01-01".
-    pub why: String,
-}
-
 impl Preset {
     fn parse(text: &str, origin: &str) -> Result<Self> {
         let mut p: Self = toml::from_str(text).map_err(|e| AppError::config(format!("preset {origin}: {e}")))?;
@@ -277,28 +222,19 @@ impl Preset {
         if let Some(t) = self.tracks.iter().find(|t| !TRACKS.contains(&t.as_str())) {
             return bad(format!("unknown track '{t}' (known: {})", TRACKS.join(", ")));
         }
-        if let Some(d) = self.shelf_life.date.as_deref().filter(|d| !matches!(*d, "use_by" | "best_by")) {
-            return bad(format!("shelf_life.date '{d}' must be use_by or best_by"));
-        }
         for (k, v) in self.values() {
             Life::parse(v).map_err(|e| e.context(k))?;
         }
-        let has_life =
-            [&self.shelf_life.fridge, &self.shelf_life.freezer, &self.shelf_life.pantry].iter().any(|v| v.is_some());
-        if has_life && self.shelf_life.date.is_none() {
-            return bad("shelf_life needs date = \"use_by\" or \"best_by\"".into());
+        if let Some(t) = &self.shelf_life_type {
+            crate::shelf_life::check_name(t)?;
         }
         Ok(())
     }
 
     /// Every duration value that is set, by its key.
     fn values(&self) -> Vec<(&'static str, &str)> {
-        let (s, i) = (&self.shelf_life, &self.intervals);
+        let i = &self.intervals;
         [
-            ("fridge", &s.fridge),
-            ("freezer", &s.freezer),
-            ("pantry", &s.pantry),
-            ("opened", &s.opened),
             ("replace", &i.replace),
             ("inspect", &i.inspect),
             ("service", &i.service),
@@ -329,54 +265,6 @@ impl Preset {
     /// Insurers want a serial number for items of this kind.
     pub fn is_serialized(&self) -> bool {
         self.tracks.iter().any(|t| t == "serial")
-    }
-
-    /// Fill a lot's use-by / best-by date from the shelf life. `storage` is
-    /// where the lot is kept (from its location); a frozen lot counts as in
-    /// the freezer. Dates already given are kept. Returns what was filled.
-    pub fn fill_lot(&self, lot: &mut Lot, storage: Option<Storage>) -> Option<LotFill> {
-        let s = &self.shelf_life;
-        let field = match s.date.as_deref()? {
-            "use_by" if lot.expires_at.is_none() => "expires_at",
-            "best_by" if lot.best_by.is_none() => "best_by",
-            _ => return None,
-        };
-        let of = |st: Storage| match st {
-            Storage::Fridge => life(&s.fridge),
-            Storage::Freezer => life(&s.freezer),
-            Storage::Pantry => life(&s.pantry),
-        };
-        let storage = if lot.frozen_at.is_some() { Some(Storage::Freezer) } else { storage };
-        let storage = storage.filter(|st| of(*st).is_some()).or_else(|| {
-            [Storage::Fridge, Storage::Pantry, Storage::Freezer].into_iter().find(|st| of(*st).is_some())
-        })?;
-        let l = of(storage)?;
-        let acquired = lot.acquired_at.as_deref().and_then(|d| crate::util::date_of(d).ok())?;
-        let (base, from) = match storage {
-            Storage::Freezer => {
-                let f = lot.frozen_at.as_deref().and_then(|d| crate::util::date_of(d).ok()).unwrap_or(acquired);
-                lot.frozen_at.get_or_insert_with(|| f.to_string());
-                (f, "freezing")
-            }
-            _ => (acquired, "purchase"),
-        };
-        let mut due = date_after(base, l.span());
-        let mut why = format!("{} in the {} from {from} on {base}", l.display(), storage.as_str());
-        if let (Some(o), Some(opened)) =
-            (life(&s.opened), lot.opened_at.as_deref().and_then(|d| crate::util::date_of(d).ok()))
-        {
-            let after = date_after(opened, o.span());
-            if after < due {
-                due = after;
-                why = format!("{} after opening on {opened}", o.display());
-            }
-        }
-        let date = due.to_string();
-        match field {
-            "expires_at" => lot.expires_at = Some(date.clone()),
-            _ => lot.best_by = Some(date.clone()),
-        }
-        Some(LotFill { field, date, storage: storage.as_str(), why })
     }
 
     /// Defaults and service dates for a new item: sets the unit and the
@@ -544,13 +432,17 @@ mod tests {
     }
 
     #[test]
-    fn food_sources_cite_foodkeeper_and_smoke_alarms_nfpa() {
+    fn food_presets_name_known_shelf_life_types_and_smoke_alarms_cite_nfpa() {
         let c = Catalog::builtin();
-        for p in c.presets.values().filter(|p| {
-            p.shelf_life.fridge.is_some() || p.shelf_life.freezer.is_some() || p.shelf_life.pantry.is_some()
-        }) {
-            assert!(p.sources.iter().any(|s| s.cite.contains("FoodKeeper")), "{}", p.name);
+        let types = crate::shelf_life::Types::builtin();
+        for p in c.presets.values() {
+            if let Some(t) = &p.shelf_life_type {
+                assert!(types.get(t).is_some(), "{}: unknown shelf-life type {t}", p.name);
+                assert_eq!(p.category, "food", "{}", p.name);
+            }
         }
+        assert_eq!(c.get("meat.raw").unwrap().shelf_life_type.as_deref(), Some("raw-beef"));
+        assert!(c.get("pantry").unwrap().shelf_life_type.is_none(), "dry and canned goods never expire");
         let smoke = c.get("smoke-detector").unwrap();
         assert_eq!(smoke.intervals.replace.as_deref(), Some("10y"));
         assert_eq!(
@@ -565,44 +457,6 @@ mod tests {
         assert_eq!(Life::parse("10y").unwrap().display(), "10 years");
         assert_eq!(Life::parse("4-12m").unwrap().display(), "4-12 months");
         assert!(Life::parse("5-3d").is_err() && Life::parse("3").is_err() && Life::parse("0d").is_err());
-    }
-
-    #[test]
-    fn storage_from_location_names() {
-        assert_eq!(Storage::from_path("Rental apartment / Kitchen / Fridge"), Some(Storage::Fridge));
-        assert_eq!(Storage::from_path("Rental apartment / Kitchen / Fridge / Freezer drawer"), Some(Storage::Freezer));
-        assert_eq!(Storage::from_path("Garage / Chest Freezer / Bin 2"), Some(Storage::Freezer));
-        assert_eq!(Storage::from_path("Kitchen / Pantry / Shelf 1"), Some(Storage::Pantry));
-        assert_eq!(Storage::from_path("Kitchen"), None);
-    }
-
-    fn lot(acquired: &str) -> Lot {
-        Lot { acquired_at: Some(acquired.into()), status: "sealed".into(), ..Default::default() }
-    }
-
-    #[test]
-    fn lots_get_the_shorter_end_of_the_range_by_storage() {
-        let c = Catalog::builtin();
-        let meat = c.get("meat.raw").unwrap();
-        let mut l = lot("2026-01-01");
-        let f = meat.fill_lot(&mut l, Some(Storage::Fridge)).unwrap();
-        assert_eq!((f.field, l.expires_at.as_deref()), ("expires_at", Some("2026-01-04")));
-        let mut l = lot("2026-01-01");
-        meat.fill_lot(&mut l, Some(Storage::Freezer)).unwrap();
-        assert_eq!((l.expires_at.as_deref(), l.frozen_at.as_deref()), (Some("2026-05-01"), Some("2026-01-01")));
-        // unknown place: the fridge
-        let mut l = lot("2026-01-01");
-        meat.fill_lot(&mut l, None).unwrap();
-        assert_eq!(l.expires_at.as_deref(), Some("2026-01-04"));
-        // a given date wins
-        let mut l = Lot { expires_at: Some("2026-02-01".into()), ..lot("2026-01-01") };
-        assert!(meat.fill_lot(&mut l, None).is_none());
-        // bread: pantry best-by; no fridge figure, so a fridge location falls back to the pantry
-        let mut l = lot("2026-01-01");
-        let f = c.get("bread").unwrap().fill_lot(&mut l, Some(Storage::Fridge)).unwrap();
-        assert_eq!((f.field, f.storage, l.best_by.as_deref()), ("best_by", "pantry", Some("2026-01-15")));
-        // no shelf life: nothing
-        assert!(c.get("dairy").unwrap().fill_lot(&mut lot("2026-01-01"), None).is_none());
     }
 
     #[test]
@@ -629,13 +483,14 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join("meat.raw.toml"),
-            "name = \"meat.raw\"\ndescription = \"mine\"\ncategory = \"food\"\n[shelf_life]\ndate = \"use_by\"\nfridge = \"2d\"\n",
+            "name = \"meat.raw\"\ndescription = \"mine\"\ncategory = \"food\"\nshelf_life_type = \"ground-meat\"\n[shelf_life]\ndate = \"use_by\"\nfridge = \"2d\"\n",
         )
         .unwrap();
         std::fs::write(dir.join("kombucha.toml"), "name = \"kombucha\"\ndescription = \"k\"\ncategory = \"food\"\n")
             .unwrap();
         let c = Catalog::load(&cfg).unwrap();
         assert_eq!(c.get("meat.raw").unwrap().description, "mine");
+        assert_eq!(c.get("meat.raw").unwrap().shelf_life_type.as_deref(), Some("ground-meat"), "legacy table ignored");
         assert!(c.get("meat.raw").unwrap().origin.ends_with("meat.raw.toml"));
         assert!(c.get("kombucha").is_some() && c.get("eggs").is_some());
         std::fs::write(dir.join("bad.toml"), "name = \"bad\"\ndescription = \"b\"\ncategory = \"nope\"\n").unwrap();

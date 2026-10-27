@@ -1,0 +1,653 @@
+# wherebox built-in shelf-life types (docs/SPEC.md, "Shelf life").
+#
+# One table per type: `[<type>]` with
+#   group       fruit, vegetable, dairy, eggs, meat, poultry, seafood, bakery,
+#               prepared, opened
+#   description what it covers
+#   pantry, fridge, freezer   how long it keeps stored there (5d, 2w, 6m, 1y);
+#               absent = storing it there is not recommended
+#   opened      how long it keeps once opened (replaces the storage figure)
+#   synonyms    other names, for classifying items by name
+#   not         words that rule a name out (`peanut butter` is not butter)
+#
+# Figures are conservative: the short end of every published range, from
+# purchase (or freezing, or opening). Override or extend any type in
+# config.toml with a `[shelf_life.<type>]` table (`wherebox shelf-life set`).
+
+# --- Fruit ------------------------------------------------------------------
+# USDA FSIS FoodKeeper (FoodSafety.gov FoodKeeper data, "Produce: fresh
+# fruits"); freezer figures for prepared (peeled, sliced) fruit.
+
+[apple]
+group = "fruit"
+description = "Whole apples"
+pantry = "3w"
+fridge = "4w"
+freezer = "8m"
+synonyms = ["apples", "gala", "fuji", "honeycrisp", "granny smith"]
+not = ["juice", "sauce", "applesauce", "cider", "vinegar", "watch", "pie", "butter"]
+
+[avocado]
+group = "fruit"
+description = "Avocados"
+pantry = "3d"
+fridge = "3d"
+synonyms = ["avocados", "hass"]
+not = ["oil"]
+
+[banana]
+group = "fruit"
+description = "Bananas and plantains"
+pantry = "2d"
+fridge = "2d"
+freezer = "2m"
+synonyms = ["bananas", "plantain"]
+not = ["bread", "pudding"]
+
+[berries]
+group = "fruit"
+description = "Strawberries, raspberries, blackberries, blueberries"
+fridge = "2d"
+freezer = "8m"
+synonyms = ["strawberry", "strawberries", "raspberry", "blackberry", "blueberry", "berry"]
+not = ["jam", "jelly", "preserves", "syrup", "juice"]
+
+[cherries]
+group = "fruit"
+description = "Fresh cherries"
+fridge = "3d"
+freezer = "8m"
+synonyms = ["cherry"]
+not = ["tomato", "pie", "maraschino", "juice"]
+
+[citrus]
+group = "fruit"
+description = "Oranges, lemons, limes, grapefruit, mandarins"
+pantry = "10d"
+fridge = "3w"
+synonyms = ["orange", "lemon", "lime", "grapefruit", "mandarin", "clementine", "tangerine"]
+not = ["juice", "extract", "pepper", "zest", "marmalade", "soda"]
+
+[cut-fruit]
+group = "fruit"
+description = "Cut or peeled fresh fruit, fruit salad"
+fridge = "3d"
+freezer = "8m"
+synonyms = ["fruit salad", "cut fruit"]
+
+[grapes]
+group = "fruit"
+description = "Grapes"
+fridge = "1w"
+freezer = "1m"
+synonyms = ["grape"]
+not = ["juice", "jelly", "jam", "seed"]
+
+[mango]
+group = "fruit"
+description = "Mangoes and papayas"
+pantry = "2d"
+fridge = "5d"
+freezer = "6m"
+synonyms = ["mangoes", "papaya"]
+not = ["juice", "nectar"]
+
+[melon]
+group = "fruit"
+description = "Whole melons: watermelon, cantaloupe, honeydew"
+pantry = "1w"
+fridge = "1w"
+synonyms = ["watermelon", "cantaloupe", "honeydew"]
+
+[pear]
+group = "fruit"
+description = "Pears"
+pantry = "3d"
+fridge = "5d"
+synonyms = ["pears"]
+not = ["juice", "nectar"]
+
+[pineapple]
+group = "fruit"
+description = "Fresh pineapple"
+pantry = "2d"
+fridge = "5d"
+freezer = "4m"
+not = ["juice", "canned"]
+
+[stone-fruit]
+group = "fruit"
+description = "Peaches, plums, nectarines, apricots"
+pantry = "1d"
+fridge = "3d"
+freezer = "8m"
+synonyms = ["peach", "plum", "nectarine", "apricot"]
+not = ["dried", "jam", "preserves", "nectar"]
+
+# --- Vegetables ---------------------------------------------------------------
+# USDA FSIS FoodKeeper ("Produce: fresh vegetables"); freezer figures for
+# blanched vegetables.
+
+[asparagus]
+group = "vegetable"
+description = "Fresh asparagus"
+fridge = "3d"
+freezer = "8m"
+
+[bell-pepper]
+group = "vegetable"
+description = "Bell and chili peppers"
+fridge = "4d"
+freezer = "6m"
+synonyms = ["bell pepper", "sweet pepper", "jalapeno", "poblano", "red pepper", "green pepper"]
+not = ["flakes", "ground", "sauce", "black", "roasted"]
+
+[broccoli]
+group = "vegetable"
+description = "Broccoli and broccolini"
+fridge = "3d"
+freezer = "10m"
+synonyms = ["broccolini"]
+
+[cabbage]
+group = "vegetable"
+description = "Cabbage, Brussels sprouts"
+fridge = "1w"
+freezer = "10m"
+synonyms = ["brussels sprouts", "bok choy"]
+not = ["sauerkraut", "kimchi"]
+
+[carrot]
+group = "vegetable"
+description = "Carrots and other root vegetables (beets, parsnips, radishes)"
+fridge = "2w"
+freezer = "10m"
+synonyms = ["carrots", "baby carrots", "beet", "parsnip", "radish", "turnip"]
+not = ["cake", "juice"]
+
+[cauliflower]
+group = "vegetable"
+description = "Cauliflower"
+fridge = "3d"
+freezer = "10m"
+not = ["rice", "crust"]
+
+[celery]
+group = "vegetable"
+description = "Celery"
+fridge = "1w"
+freezer = "10m"
+not = ["salt", "seed"]
+
+[corn]
+group = "vegetable"
+description = "Fresh sweet corn on the cob"
+fridge = "1d"
+freezer = "8m"
+synonyms = ["corn on the cob", "sweet corn"]
+not = ["starch", "meal", "cornmeal", "flakes", "syrup", "tortilla", "tortillas", "flour", "popcorn", "bread", "dog"]
+
+[cucumber]
+group = "vegetable"
+description = "Cucumbers"
+fridge = "4d"
+synonyms = ["cucumbers"]
+not = ["pickle", "pickles"]
+
+[fresh-herbs]
+group = "vegetable"
+description = "Fresh herbs: basil, cilantro, parsley, mint, dill, chives"
+fridge = "5d"
+freezer = "6m"
+synonyms = ["basil", "cilantro", "parsley", "mint", "dill", "chives", "green onions", "scallions"]
+not = ["pesto", "paste", "seed", "flakes", "ground", "seasoning", "blend", "provence", "tea", "gum", "candy", "extract"]
+
+[green-beans]
+group = "vegetable"
+description = "Green beans, snap peas, snow peas"
+fridge = "3d"
+freezer = "8m"
+synonyms = ["green beans", "snap peas", "snow peas", "string beans"]
+
+[leafy-greens]
+group = "vegetable"
+description = "Kale, chard, collards, arugula and other cooking greens"
+fridge = "2d"
+freezer = "10m"
+synonyms = ["kale", "chard", "collard greens", "arugula", "mixed greens", "spring mix", "greens"]
+not = ["chips", "powder"]
+
+[lettuce]
+group = "vegetable"
+description = "Head and leaf lettuce, salad mixes"
+fridge = "3d"
+synonyms = ["romaine", "iceberg", "butter lettuce", "salad mix", "bagged salad"]
+
+[mushroom]
+group = "vegetable"
+description = "Fresh mushrooms"
+fridge = "3d"
+freezer = "10m"
+synonyms = ["mushrooms", "portobello", "cremini", "shiitake"]
+not = ["soup", "sauce"]
+
+[onion]
+group = "vegetable"
+description = "Dry onions and shallots (green onions: fresh-herbs)"
+pantry = "2w"
+fridge = "2m"
+freezer = "10m"
+synonyms = ["onions", "shallot", "red onion", "yellow onion"]
+not = ["powder", "soup", "rings", "flakes", "salt", "dip"]
+
+[potato]
+group = "vegetable"
+description = "Potatoes"
+pantry = "1m"
+fridge = "1w"
+synonyms = ["potatoes", "russet", "yukon gold", "red potatoes"]
+not = ["flakes", "instant", "starch", "salad", "tots", "fries", "sweet"]
+
+[spinach]
+group = "vegetable"
+description = "Fresh spinach"
+fridge = "2d"
+freezer = "10m"
+synonyms = ["baby spinach"]
+not = ["dip", "pasta"]
+
+[squash]
+group = "vegetable"
+description = "Zucchini and summer squash"
+fridge = "4d"
+freezer = "10m"
+synonyms = ["zucchini", "summer squash", "yellow squash"]
+not = ["bread"]
+
+[sweet-potato]
+group = "vegetable"
+description = "Sweet potatoes and yams, winter squash"
+pantry = "3w"
+freezer = "10m"
+synonyms = ["sweet potatoes", "yam", "butternut squash", "acorn squash"]
+not = ["fries", "chips", "pie"]
+
+[tomato]
+group = "vegetable"
+description = "Fresh tomatoes"
+pantry = "3d"
+fridge = "2d"
+freezer = "2m"
+synonyms = ["tomatoes", "cherry tomatoes", "roma", "grape tomatoes"]
+not = ["paste", "sauce", "ketchup", "soup", "juice", "sun", "crushed", "puree", "salsa"]
+
+# --- Dairy --------------------------------------------------------------------
+# USDA FSIS FoodKeeper ("Dairy products and eggs") and FDA / FoodSafety.gov
+# Cold Food Storage Chart ("Dairy").
+
+[butter]
+group = "dairy"
+description = "Butter"
+fridge = "1m"
+freezer = "6m"
+not = ["peanut", "almond", "cashew", "apple", "cookie", "sunflower", "nut", "shea", "cocoa", "body", "lettuce", "milk", "popcorn", "crackers"]
+
+[cheese-hard]
+group = "dairy"
+description = "Hard cheese: cheddar, parmesan, swiss, gouda"
+fridge = "6m"
+freezer = "6m"
+opened = "3w"
+synonyms = ["hard cheese", "cheddar", "parmesan", "parmigiano", "swiss cheese", "gouda", "gruyere", "pecorino", "manchego", "colby", "monterey jack"]
+
+[cheese-soft]
+group = "dairy"
+description = "Soft cheese: brie, feta, mozzarella, ricotta, goat cheese"
+fridge = "1w"
+freezer = "6m"
+synonyms = ["soft cheese", "brie", "feta", "mozzarella", "ricotta", "goat cheese", "camembert", "burrata", "queso fresco", "mascarpone"]
+
+[cottage-cheese]
+group = "dairy"
+description = "Cottage cheese"
+fridge = "1w"
+opened = "5d"
+
+[cream]
+group = "dairy"
+description = "Cream, half and half, whipping cream"
+fridge = "1w"
+opened = "3d"
+freezer = "3m"
+synonyms = ["heavy cream", "whipping cream", "coffee creamer"]
+not = ["ice", "cheese", "sour", "of", "soup", "powder"]
+
+[cream-cheese]
+group = "dairy"
+description = "Cream cheese"
+fridge = "2w"
+opened = "1w"
+synonyms = ["cream cheese"]
+
+[ice-cream]
+group = "dairy"
+description = "Ice cream and frozen desserts"
+freezer = "2m"
+synonyms = ["ice cream", "gelato", "sorbet", "frozen yogurt"]
+
+[milk]
+group = "dairy"
+description = "Fresh milk and refrigerated plant milks"
+fridge = "1w"
+freezer = "3m"
+synonyms = ["whole milk", "skim milk", "oat milk", "almond milk", "soy milk", "buttermilk"]
+not = ["chocolate", "powder", "powdered", "evaporated", "condensed", "coconut", "shelf", "uht"]
+
+[sour-cream]
+group = "dairy"
+description = "Sour cream"
+fridge = "1w"
+synonyms = ["sour cream", "creme fraiche"]
+
+[yogurt]
+group = "dairy"
+description = "Yogurt and kefir"
+fridge = "1w"
+freezer = "1m"
+synonyms = ["yoghurt", "greek yogurt", "kefir"]
+not = ["frozen", "raisins", "covered"]
+
+# --- Eggs ---------------------------------------------------------------------
+# FDA / FoodSafety.gov Cold Food Storage Chart ("Eggs"); USDA FSIS FoodKeeper.
+
+[eggs]
+group = "eggs"
+description = "Raw eggs in the shell (freezer: beaten, out of the shell)"
+fridge = "3w"
+freezer = "12m"
+synonyms = ["egg", "brown eggs"]
+not = ["noodles", "pasta", "nog", "eggnog", "roll", "rolls", "plant", "boiled", "salad"]
+
+[hard-boiled-eggs]
+group = "eggs"
+description = "Hard-cooked eggs"
+fridge = "1w"
+synonyms = ["hard boiled eggs", "boiled eggs", "hard cooked eggs"]
+
+# --- Meat ---------------------------------------------------------------------
+# FDA / FoodSafety.gov Cold Food Storage Chart ("Fresh beef, veal, lamb and
+# pork", "Hamburger and other ground meats", "Bacon and sausage", "Ham",
+# "Hot dogs and luncheon meats"); USDA FSIS FoodKeeper.
+
+[bacon]
+group = "meat"
+description = "Raw bacon"
+fridge = "1w"
+freezer = "1m"
+not = ["bits", "jerky"]
+
+[cooked-meat]
+group = "meat"
+description = "Cooked meat and poultry, rotisserie chicken"
+fridge = "3d"
+freezer = "2m"
+synonyms = ["rotisserie chicken", "cooked chicken", "roast beef cooked", "pulled pork", "cooked meat"]
+
+[deli-meat]
+group = "meat"
+description = "Luncheon meat, sliced deli meat, salami"
+fridge = "2w"
+opened = "3d"
+freezer = "1m"
+synonyms = ["deli meat", "lunch meat", "cold cuts", "deli turkey", "deli ham", "salami", "bologna", "prosciutto", "pastrami"]
+
+[ground-meat]
+group = "meat"
+description = "Raw ground beef, pork, lamb, turkey, chicken; burgers"
+fridge = "1d"
+freezer = "3m"
+synonyms = ["ground beef", "ground pork", "ground turkey", "ground chicken", "ground lamb", "hamburger", "burger patties", "minced beef"]
+not = ["bun", "buns", "helper", "seasoning"]
+
+[ham]
+group = "meat"
+description = "Cooked ham, sliced or whole"
+fridge = "3d"
+freezer = "1m"
+synonyms = ["ham steak", "spiral ham"]
+not = ["deli", "hamburger", "canned"]
+
+[hot-dogs]
+group = "meat"
+description = "Hot dogs and frankfurters"
+fridge = "2w"
+opened = "1w"
+freezer = "1m"
+synonyms = ["hot dog", "frankfurters", "franks", "wieners"]
+not = ["buns", "bun"]
+
+[raw-beef]
+group = "meat"
+description = "Raw beef, veal and lamb: steaks, roasts, chops, ribs"
+fridge = "3d"
+freezer = "4m"
+synonyms = ["steak", "ribeye", "sirloin", "filet mignon", "beef roast", "brisket", "short ribs", "stew meat", "lamb chops", "veal", "beef"]
+not = ["jerky", "broth", "stock", "ground", "bouillon", "corned", "sauce", "gravy"]
+
+[raw-pork]
+group = "meat"
+description = "Raw pork: chops, roasts, tenderloin, ribs"
+fridge = "3d"
+freezer = "4m"
+synonyms = ["pork chops", "pork loin", "pork tenderloin", "pork shoulder", "pork ribs", "spare ribs", "pork"]
+not = ["rinds", "ground", "beans"]
+
+[raw-sausage]
+group = "meat"
+description = "Raw sausage from pork, beef, chicken or turkey"
+fridge = "1d"
+freezer = "1m"
+synonyms = ["sausage", "bratwurst", "italian sausage", "breakfast sausage", "chorizo"]
+not = ["summer", "pepperoni", "dry", "smoked", "cooked"]
+
+# --- Poultry ------------------------------------------------------------------
+# FDA / FoodSafety.gov Cold Food Storage Chart ("Fresh poultry"); USDA FSIS
+# FoodKeeper.
+
+[raw-chicken]
+group = "poultry"
+description = "Raw chicken, whole or in pieces"
+fridge = "1d"
+freezer = "9m"
+synonyms = ["chicken breast", "chicken thigh", "chicken wings", "chicken drumsticks", "chicken legs", "whole chicken", "chicken tenders", "chicken cutlets"]
+not = ["broth", "stock", "bouillon", "nuggets", "cooked", "rotisserie", "soup"]
+
+[raw-turkey]
+group = "poultry"
+description = "Raw turkey, duck and other poultry"
+fridge = "1d"
+freezer = "9m"
+synonyms = ["turkey breast", "whole turkey", "turkey thighs", "turkey legs", "duck"]
+not = ["deli", "sliced", "ground", "jerky", "bacon"]
+
+# --- Seafood ------------------------------------------------------------------
+# FDA / FoodSafety.gov Cold Food Storage Chart ("Fresh fish", "Shellfish",
+# "Smoked fish"); USDA FSIS FoodKeeper.
+
+[cooked-seafood]
+group = "seafood"
+description = "Cooked fish and shellfish"
+fridge = "3d"
+freezer = "3m"
+synonyms = ["cooked shrimp", "cooked fish", "crab meat", "lobster meat"]
+
+[raw-fish]
+group = "seafood"
+description = "Raw fish fillets and steaks"
+fridge = "1d"
+freezer = "2m"
+synonyms = ["salmon", "cod", "tilapia", "halibut", "trout", "mahi mahi", "fish fillet", "tuna steak", "sea bass", "haddock", "catfish", "swordfish"]
+not = ["smoked", "canned", "oil", "jerky", "sticks"]
+
+[raw-shellfish]
+group = "seafood"
+description = "Raw shrimp, scallops, crab, lobster, clams, mussels, oysters"
+fridge = "1d"
+freezer = "3m"
+synonyms = ["shrimp", "prawns", "scallops", "crab", "lobster", "clams", "mussels", "oysters", "squid"]
+not = ["chips", "crackers", "cooked", "sauce", "imitation", "paste"]
+
+[smoked-fish]
+group = "seafood"
+description = "Smoked fish: lox, smoked salmon, kippers"
+fridge = "2w"
+opened = "3d"
+freezer = "2m"
+synonyms = ["smoked salmon", "lox", "kippers", "smoked trout"]
+
+# --- Bakery -------------------------------------------------------------------
+# USDA FSIS FoodKeeper ("Baked goods: commercial bread products", "bagels",
+# "muffins", "tortillas").
+
+[bagels]
+group = "bakery"
+description = "Bagels and English muffins"
+pantry = "2d"
+freezer = "3m"
+synonyms = ["bagel", "english muffins"]
+not = ["chips", "seasoning"]
+
+[bread]
+group = "bakery"
+description = "Commercial bread, rolls, buns"
+pantry = "2w"
+freezer = "3m"
+synonyms = ["loaf", "sourdough", "baguette", "rolls", "buns", "brioche", "ciabatta", "sandwich bread", "hamburger buns", "hot dog buns"]
+not = ["crumbs", "crumb", "mix", "flour", "machine", "knife", "box", "pudding", "sticks"]
+
+[pastries]
+group = "bakery"
+description = "Muffins, croissants, donuts, cakes, pies"
+pantry = "2d"
+fridge = "1w"
+freezer = "2m"
+synonyms = ["muffins", "croissant", "donuts", "doughnuts", "cake", "cupcakes", "pie", "danish"]
+not = ["mix", "pan", "rice", "flour", "stand", "fish"]
+
+[tortillas]
+group = "bakery"
+description = "Flour and corn tortillas, wraps, pita"
+pantry = "1w"
+fridge = "4w"
+freezer = "6m"
+synonyms = ["tortilla", "wraps", "pita", "naan", "flatbread"]
+not = ["chips", "strips"]
+
+# --- Prepared food ------------------------------------------------------------
+# FDA / FoodSafety.gov Cold Food Storage Chart ("Leftovers", "Soups and stews",
+# "Salads", "Pizza", "Frozen dinners and entrees"); USDA FSIS FoodKeeper.
+
+[cooked-grains]
+group = "prepared"
+description = "Cooked rice, pasta and grains"
+fridge = "3d"
+freezer = "1m"
+synonyms = ["cooked rice", "cooked pasta", "leftover rice", "cooked quinoa"]
+
+[cooked-leftovers]
+group = "prepared"
+description = "Cooked leftovers, takeout, casseroles"
+fridge = "3d"
+freezer = "1m"
+synonyms = ["leftovers", "leftover", "takeout", "casserole", "meal prep"]
+
+[deli-salad]
+group = "prepared"
+description = "Store-made or homemade egg, chicken, tuna, potato and macaroni salads"
+fridge = "3d"
+synonyms = ["egg salad", "chicken salad", "tuna salad", "potato salad", "macaroni salad", "coleslaw", "pasta salad"]
+
+[refrigerated-juice]
+group = "prepared"
+description = "Refrigerated juice and cider, fresh squeezed juice"
+fridge = "1w"
+freezer = "8m"
+synonyms = ["orange juice", "apple cider", "cold pressed juice"]
+not = ["concentrate", "box", "shelf"]
+
+[refrigerated-pasta]
+group = "prepared"
+description = "Fresh (refrigerated) pasta and dough"
+fridge = "1d"
+freezer = "2m"
+synonyms = ["pizza dough", "cookie dough", "pie crust dough"]
+
+[frozen-meal]
+group = "prepared"
+description = "Frozen dinners, entrees and pizza"
+freezer = "3m"
+synonyms = ["frozen dinner", "frozen meal", "frozen pizza", "tv dinner", "frozen entree"]
+
+[hummus]
+group = "prepared"
+description = "Hummus, guacamole and fresh dips"
+fridge = "1w"
+opened = "4d"
+synonyms = ["guacamole", "tzatziki", "dip"]
+not = ["chips", "mix"]
+
+[pizza]
+group = "prepared"
+description = "Leftover or delivered pizza"
+fridge = "3d"
+freezer = "1m"
+synonyms = ["pizza slices", "leftover pizza"]
+not = ["frozen", "dough", "sauce", "stone", "cutter", "crust"]
+
+[soup]
+group = "prepared"
+description = "Homemade or refrigerated soups and stews"
+fridge = "3d"
+freezer = "2m"
+synonyms = ["stew", "chili", "chowder"]
+not = ["mix", "bowl", "powder", "bouillon", "flakes", "sauce", "beans", "spoon"]
+
+[tofu]
+group = "prepared"
+description = "Tofu and tempeh"
+fridge = "1w"
+opened = "3d"
+freezer = "5m"
+synonyms = ["tempeh"]
+
+# --- Opened -------------------------------------------------------------------
+# Shelf-stable until opened. FDA / FoodSafety.gov Cold Food Storage Chart
+# ("Mayonnaise, commercial", "Condiments") and USDA FSIS FoodKeeper
+# ("Canned goods, opened", "Broth", "Pasta sauce").
+
+[opened-broth]
+group = "opened"
+description = "Broth and stock, once opened"
+opened = "3d"
+synonyms = ["broth", "stock", "bone broth"]
+not = ["cube", "cubes", "bouillon", "powder", "concentrate", "pot"]
+
+[opened-canned-food]
+group = "opened"
+description = "Canned food once opened (refrigerated in a covered container)"
+opened = "3d"
+synonyms = ["opened can", "canned food opened"]
+
+[opened-condiment]
+group = "opened"
+description = "Mayonnaise, ketchup, mustard, dressings and other condiments, once opened"
+opened = "2m"
+synonyms = ["mayonnaise", "mayo", "ketchup", "mustard", "salad dressing", "dressing", "aioli", "tartar sauce", "relish"]
+not = ["seed", "powder", "ground", "greens"]
+
+[opened-sauce]
+group = "opened"
+description = "Pasta sauce, salsa, pesto and similar jarred sauces, once opened"
+opened = "3d"
+synonyms = ["pasta sauce", "marinara", "pesto", "salsa", "alfredo sauce"]
+not = ["mix", "packet", "seasoning"]

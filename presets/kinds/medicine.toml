@@ -5,7 +5,7 @@ description = "Medicines, prescription and over the counter"
 category = "consumable"
 tracks = ["expiration"]
 alert_days = 30
-notes = "Enter the printed expiration date (--expires)."
+notes = "Not perishable: wherebox tracks no expiry for it (docs/SPEC.md, \"Shelf life\"). Keep a printed expiration date as a custom field: --field Expiration=2027-01-31."
 
 [[sources]]
 covers = "alert_days"

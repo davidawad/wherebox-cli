@@ -4,7 +4,7 @@ name = "dairy"
 description = "Milk, cheese, yogurt, butter, cream"
 category = "food"
 tracks = ["best_by", "opened_at"]
-notes = "Shelf life varies too much across dairy for one default; enter the package date (--best-by). FoodKeeper: milk by package date, yogurt 1-2 weeks, hard cheese 6 months, butter 1-2 months refrigerated."
+notes = "Each dairy product gets its own shelf-life type by name (milk, yogurt, cheese-hard, butter...; see `wherebox shelf-life ls`)."
 
 [[sources]]
 covers = "notes"

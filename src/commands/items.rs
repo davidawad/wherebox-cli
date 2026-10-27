@@ -9,11 +9,12 @@ use crate::context::Ctx;
 use crate::db::Db;
 use crate::error::{AppError, Result};
 use crate::fields::{self, Parse};
+use crate::onhand::ItemEst;
 use crate::output::{to_record, Format, Record, Report};
 use crate::store::{self, Item, Lot, Source, Tree, GONE};
 use crate::util::{money_value, parse_date};
 
-pub const ITEM_TABLE: &[&str] = &["asset_id", "name", "quantity", "location", "status", "value", "labels"];
+pub const ITEM_TABLE: &[&str] = &["asset_id", "name", "on_hand", "location", "status", "value", "labels"];
 
 /// Everything needed to describe items, loaded once per command.
 pub struct Lookups {
@@ -21,16 +22,16 @@ pub struct Lookups {
     pub labels: HashMap<String, Vec<String>>,
     pub fields: HashMap<String, BTreeMap<String, String>>,
     pub sources: HashMap<String, Vec<Source>>,
+    /// Estimated on hand, shelf-life type and lot expiries, by item id.
+    pub est: HashMap<String, ItemEst>,
 }
 
 impl Lookups {
-    pub fn load(db: &Db) -> Result<Self> {
-        Ok(Self {
-            tree: Tree::load(db)?,
-            labels: store::all_item_labels(db)?,
-            fields: store::all_item_fields(db)?,
-            sources: store::all_item_sources(db)?,
-        })
+    pub fn load(ctx: &Ctx, db: &Db) -> Result<Self> {
+        let cfg = crate::onhand::Config::load(ctx)?;
+        let e = crate::onhand::Estimator::load(&cfg, db, ctx.tz.today())?;
+        let est = e.all(&store::all_items(db)?, &store::all_lots(db)?);
+        Ok(Self { tree: e.tree, labels: e.labels, fields: e.fields, sources: store::all_item_sources(db)?, est })
     }
 
     pub fn labels_of(&self, id: &str) -> Vec<String> {
@@ -87,6 +88,21 @@ pub fn item_record(i: &Item, lk: &Lookups) -> Record {
     put("reorder_qty", json!(i.reorder_qty));
     put("preferred_vendor", json!(i.preferred_vendor));
     put("product_ref", json!(i.product_ref));
+    let est = lk.est.get(&i.id);
+    let class = est.and_then(|e| e.class.as_ref());
+    put("shelf_life", json!(class.map(|c| c.name.clone()).or_else(|| i.shelf_life.clone())));
+    put("shelf_life_basis", json!(class.map(|c| c.basis)));
+    put("on_hand", qty_json(est.map_or(i.quantity as f64, |e| e.on_hand)));
+    put("on_hand_basis", json!(est.map_or("logged", |e| e.basis)));
+    let next = est.and_then(|e| {
+        e.lots
+            .values()
+            .filter(|l| !l.presumed_used_up || l.expired)
+            .filter_map(|l| l.expiry.as_ref())
+            .min_by_key(|x| x.date)
+    });
+    put("expires_at", json!(next.map(|x| x.date.to_string())));
+    put("expiry_basis", json!(next.map(|x| x.basis)));
     put("parent_item_id", json!(i.parent_item_id));
     put("import_ref", json!(i.import_ref));
     put("fields", json!(lk.fields_of(&i.id)));
@@ -96,7 +112,11 @@ pub fn item_record(i: &Item, lk: &Lookups) -> Record {
     r
 }
 
-pub fn lot_record(l: &Lot, unit: Option<&str>, tree: &Tree) -> Record {
+/// A lot's record: its own dates, plus (with the item's estimate) the
+/// computed expiry, where it is kept and whether it is presumed used up.
+pub fn lot_record(l: &Lot, unit: Option<&str>, tree: &Tree, est: Option<&ItemEst>) -> Record {
+    let le = est.and_then(|e| e.lot(&l.id));
+    let x = le.and_then(|e| e.expiry.as_ref());
     to_record(&json!({
         "id": l.id,
         "qty": l.qty,
@@ -104,13 +124,51 @@ pub fn lot_record(l: &Lot, unit: Option<&str>, tree: &Tree) -> Record {
         "status": l.status,
         "acquired_at": l.acquired_at,
         "opened_at": l.opened_at,
-        "expires_at": l.expires_at,
         "best_by": l.best_by,
         "frozen_at": l.frozen_at,
+        "thawed_at": l.thawed_at,
+        "confirmed_at": l.confirmed_at,
+        "shelf_life": est.and_then(|e| e.class.as_ref()).map(|c| c.name.clone()),
+        "storage": le.map(|e| e.storage.as_str()),
+        "expires_at": x.map(|x| x.date.to_string()),
+        "expiry_basis": x.map(|x| x.basis),
+        "presumed_used_up": le.is_some_and(|e| e.presumed_used_up),
         "location": tree.opt_path(l.location_id),
         "unit_price": l.unit_price.map(crate::util::money_value),
         "source_ref": l.source_ref,
     }))
+}
+
+/// A quantity as JSON: whole numbers without a fraction (`2`, `0.5`).
+pub fn qty_json(q: f64) -> Value {
+    if q.fract() == 0.0 && q.abs() < 1e15 {
+        json!(q as i64)
+    } else {
+        json!(q)
+    }
+}
+
+/// Item keys computed from estimates (not stored; left out of exports).
+pub const COMPUTED_ITEM_KEYS: &[&str] = &["shelf_life_basis", "on_hand", "on_hand_basis", "expires_at", "expiry_basis"];
+/// Lot keys computed from estimates.
+pub const COMPUTED_LOT_KEYS: &[&str] = &["shelf_life", "storage", "expires_at", "expiry_basis", "presumed_used_up"];
+
+/// Text output shows estimated quantities with a tilde (`~2`).
+pub fn mark_estimates(rec: &mut Record, structured: bool) {
+    if structured || rec.get("on_hand_basis").and_then(Value::as_str) != Some("estimated") {
+        return;
+    }
+    if let Some(q) = rec.get("on_hand").and_then(Value::as_f64) {
+        rec.insert("on_hand".into(), json!(format!("~{}", crate::util::fmt_qty(q))));
+    }
+}
+
+/// An explicit `--shelf-life` must name a known type (or `none`).
+pub fn check_shelf_life(item: &Item, types: &crate::shelf_life::Types) -> Result<()> {
+    match item.shelf_life.as_deref() {
+        Some(t) if t != crate::shelf_life::NONE => types.require(t).map(|_| ()),
+        _ => Ok(()),
+    }
 }
 
 pub fn parse_ctx(ctx: &Ctx) -> Vec<String> {
@@ -119,7 +177,7 @@ pub fn parse_ctx(ctx: &Ctx) -> Vec<String> {
 
 /// Apply `add`/`edit` field flags to an item.
 pub fn apply_flags(item: &mut Item, f: &ItemFlags, p: &Parse, today: &str) -> Result<()> {
-    let pairs: [(&str, &Option<String>); 24] = [
+    let pairs: [(&str, &Option<String>); 25] = [
         ("quantity", &f.qty),
         ("purchase_price", &f.price),
         ("purchase_time", &f.bought),
@@ -144,6 +202,7 @@ pub fn apply_flags(item: &mut Item, f: &ItemFlags, p: &Parse, today: &str) -> Re
         ("reorder_qty", &f.reorder_qty),
         ("preferred_vendor", &f.vendor),
         ("product_ref", &f.product_ref),
+        ("shelf_life", &f.shelf_life),
     ];
     for (k, v) in pairs {
         if let Some(v) = v {
@@ -247,16 +306,17 @@ pub fn add(ctx: &Ctx, a: AddArgs) -> Result<()> {
     if sources.is_empty() {
         sources.push(Source { source: "manual".into(), source_ref: String::new() });
     }
-    let catalog = crate::presets::Catalog::load(&ctx.resolved.config_path)?;
+    let cfg = crate::onhand::Config::load(ctx)?;
+    let catalog = &cfg.catalog;
+    check_shelf_life(&item, &cfg.types)?;
     let preset = item.kind_preset.as_deref().map(|n| catalog.require(n)).transpose()?;
-    // A preset with a shelf life tracks the purchase as a lot to date it.
-    let make_lot = a.lot || a.lot_qty.is_some() || a.dates.any() || preset.is_some_and(|p| p.shelf_life.date.is_some());
+    // A preset with a shelf-life type tracks the purchase as a lot to date it.
+    let make_lot = a.lot || a.lot_qty.is_some() || a.dates.any() || preset.is_some_and(|p| p.shelf_life_type.is_some());
     let lot_qty =
         a.lot_qty.as_deref().or(a.item.qty.as_deref()).map(crate::util::parse_qty).transpose()?.unwrap_or(1.0);
-    let mut lot =
+    let lot =
         make_lot.then(|| crate::commands::lots::new_lot(&item.id, lot_qty, &a.dates, None, &p, &today)).transpose()?;
     let mut labels = a.labels.clone();
-    let mut filled = None;
     let mut tree = Tree::load(&db)?;
     db.transaction(|db| {
         if let Some(at) = &a.at {
@@ -278,8 +338,12 @@ pub fn add(ctx: &Ctx, a: AddArgs) -> Result<()> {
             let (fields, more_labels) = pr.apply_item(&mut item, &have, ctx.tz.today());
             custom.extend(fields.into_iter().map(|(n, v)| (n, Some(v))));
             labels = crate::util::merge_tags(&labels, &more_labels, &[]);
-            let storage = tree.opt_path(item.location_id).and_then(|p| crate::presets::Storage::from_path(&p));
-            filled = lot.as_mut().and_then(|l| pr.fill_lot(l, storage));
+        }
+        if lot.as_ref().is_some_and(|l| l.best_by.is_some()) {
+            let have: BTreeMap<String, String> =
+                custom.iter().filter_map(|(n, v)| v.clone().map(|v| (n.clone(), v))).collect();
+            let class = crate::shelf_life::classify(&item, Some(&have), &labels, true, catalog, &cfg.types);
+            crate::commands::lots::check_best_by(&item, &ItemEst { class, ..Default::default() }, Some(""))?;
         }
         store::insert_item(db, &item)?;
         store::set_item_labels(db, &item.id, &labels)?;
@@ -293,33 +357,23 @@ pub fn add(ctx: &Ctx, a: AddArgs) -> Result<()> {
         Ok(())
     })?;
     let item = store::get_item(&db, &item.id)?.ok_or_else(|| AppError::db("item vanished after insert"))?;
-    let lk = Lookups::load(&db)?;
+    let lk = Lookups::load(ctx, &db)?;
     ctx.info(&format!(
         "added {} {}{}",
         item.asset_id.as_deref().unwrap_or(&item.id),
         item.name,
         lk.tree.opt_path(item.location_id).map(|p| format!(" at {p}")).unwrap_or_default()
     ));
-    if let (Some(f), Some(pr)) = (&filled, preset) {
-        ctx.info(&format!(
-            "{}: {} {} ({}; see `wherebox preset show {}`)",
-            pr.name,
-            fill_label(f.field),
-            f.date,
-            f.why,
-            pr.name
-        ));
+    let est = lk.est.get(&item.id);
+    if let (Some(e), Some(l)) = (est, &lot) {
+        if let (Some(c), Some(x)) = (&e.class, e.lot(&l.id).and_then(|x| x.expiry.as_ref())) {
+            ctx.info(&format!(
+                "{} ({}): expires {} ({}; see `wherebox shelf-life show {}`)",
+                c.name, c.basis, x.date, x.why, c.name
+            ));
+        }
     }
     ctx.emit_mutation(&Report::object("item", item_record(&item, &lk)))
-}
-
-/// How a filled lot date is called in messages.
-pub fn fill_label(field: &str) -> &'static str {
-    if field == "expires_at" {
-        "use by"
-    } else {
-        "best by"
-    }
 }
 
 pub fn edit(ctx: &Ctx, a: EditArgs) -> Result<()> {
@@ -329,6 +383,7 @@ pub fn edit(ctx: &Ctx, a: EditArgs) -> Result<()> {
     let before = store::resolve_item(&db, &a.item)?;
     let mut item = before.clone();
     apply_flags(&mut item, &a.item_flags, &p, &today(ctx))?;
+    check_shelf_life(&item, &crate::shelf_life::Types::load(&ctx.resolved.config_path)?)?;
     if let Some(n) = &a.name {
         fields::set(&mut item, "name", Some(n), &p)?;
     }
@@ -362,6 +417,7 @@ pub fn edit(ctx: &Ctx, a: EditArgs) -> Result<()> {
             item.updated_at = crate::util::now_iso();
             store::update_item(db, &item)?;
             record_changes(db, &tree, &before, &item, "edit")?;
+            crate::commands::lots::item_moved(db, &tree, before.location_id, &item, &today(ctx))?;
         }
         if labels != labels_before {
             store::set_item_labels(db, &item.id, &labels)?;
@@ -380,7 +436,7 @@ pub fn edit(ctx: &Ctx, a: EditArgs) -> Result<()> {
         Ok(())
     })?;
     let item = store::get_item(&db, &item.id)?.ok_or_else(|| AppError::db("item vanished"))?;
-    let lk = Lookups::load(&db)?;
+    let lk = Lookups::load(ctx, &db)?;
     ctx.info(&format!("updated {} {}", item.asset_id.as_deref().unwrap_or(&item.id), item.name));
     ctx.emit_mutation(&Report::object("item", item_record(&item, &lk)))
 }
@@ -401,11 +457,12 @@ pub fn mv(ctx: &Ctx, a: MvArgs) -> Result<()> {
                 let after = Item { location_id: Some(to), updated_at: crate::util::now_iso(), ..before.clone() };
                 store::update_item(db, &after)?;
                 record_changes(db, &tree, before, &after, "mv")?;
+                crate::commands::lots::item_moved(db, &tree, before.location_id, &after, &today(ctx))?;
                 Ok(after)
             })
             .collect::<Result<Vec<_>>>()
     })?;
-    let lk = Lookups::load(&db)?;
+    let lk = Lookups::load(ctx, &db)?;
     ctx.info(&format!("moved {} item(s) to {}", moved.len(), lk.tree.path(lk.tree.resolve(&a.to)?)));
     ctx.emit_mutation(
         &Report::list("moved", moved.iter().map(|i| item_record(i, &lk)).collect()).table_columns(ITEM_TABLE),
@@ -449,7 +506,7 @@ pub fn rm(ctx: &Ctx, a: RmArgs) -> Result<()> {
         record_changes(db, &tree, &before, &item, "rm")?;
         store::add_event(db, &item.id, "gone", json!({"as": status, "on": date, "to": a.to, "note": a.note}))
     })?;
-    let lk = Lookups::load(&db)?;
+    let lk = Lookups::load(ctx, &db)?;
     ctx.info(&format!("{} {} ({status})", item.asset_id.as_deref().unwrap_or(&item.id), item.name));
     ctx.emit_mutation(&Report::object("item", item_record(&item, &lk)))
 }
@@ -462,7 +519,7 @@ fn is_structured(f: Format) -> bool {
 pub fn show(ctx: &Ctx, spec: &str) -> Result<()> {
     let db = ctx.db()?;
     let item = store::resolve_item(&db, spec)?;
-    let lk = Lookups::load(&db)?;
+    let lk = Lookups::load(ctx, &db)?;
     let mut rec = item_record(&item, &lk);
     let lots = store::lots_for(&db, &item.id)?;
     let atts = store::attachments(&db, Some(&item.id))?;
@@ -482,26 +539,30 @@ pub fn show(ctx: &Ctx, spec: &str) -> Result<()> {
                 .map(|c| json!({"id": c.id, "asset_id": c.asset_id, "name": c.name}))
                 .collect::<Vec<_>>()),
         );
+        let est = lk.est.get(&item.id);
         rec.insert(
             "lots".into(),
-            json!(lots.iter().map(|l| lot_record(l, item.unit.as_deref(), &lk.tree)).collect::<Vec<_>>()),
+            json!(lots.iter().map(|l| lot_record(l, item.unit.as_deref(), &lk.tree, est)).collect::<Vec<_>>()),
         );
         rec.insert("consumption".into(), json!(store::consumption_for(&db, &item.id)?));
         rec.insert("attachments".into(), json!(atts));
         rec.insert("history".into(), json!(events));
     } else {
         let active: Vec<&Lot> = lots.iter().filter(|l| l.is_active()).collect();
-        let on_hand: f64 = active.iter().map(|l| l.qty).sum();
-        let next_due = active.iter().filter_map(|l| l.due()).min();
+        let est = lk.est.get(&item.id);
+        let presumed =
+            active.iter().filter(|l| est.and_then(|e| e.lot(&l.id)).is_some_and(|e| e.presumed_used_up)).count();
+        mark_estimates(&mut rec, false);
         rec.insert("contains".into(), json!(children.iter().map(|c| c.name.clone()).collect::<Vec<_>>()));
         rec.insert(
             "lots".into(),
             json!((!lots.is_empty()).then(|| format!(
-                "{} active ({} {}){}",
+                "{} active, {} on hand {}{}{}",
                 active.len(),
-                crate::util::fmt_qty(on_hand),
+                est.map_or_else(|| item.quantity.to_string(), ItemEst::on_hand_text),
                 item.unit.as_deref().unwrap_or("ea"),
-                next_due.map(|d| format!(", next due {d}")).unwrap_or_default()
+                if presumed > 0 { format!(" ({presumed} presumed used up)") } else { String::new() },
+                rec.get("expires_at").and_then(Value::as_str).map(|d| format!(", next expiry {d}")).unwrap_or_default()
             ))),
         );
         rec.insert(
@@ -569,9 +630,14 @@ fn sort_items(items: &mut [Item], lk: &Lookups, key: ItemSort) {
     });
 }
 
-fn list_report(kind: &'static str, items: &[Item], lk: &Lookups) -> Report {
+fn list_report(kind: &'static str, items: &[Item], lk: &Lookups, structured: bool) -> Report {
     let total: i64 = items.iter().filter_map(Item::value).sum();
-    Report::list(kind, items.iter().map(|i| item_record(i, lk)).collect())
+    let rec = |i: &Item| {
+        let mut r = item_record(i, lk);
+        mark_estimates(&mut r, structured);
+        r
+    };
+    Report::list(kind, items.iter().map(rec).collect())
         .table_columns(ITEM_TABLE)
         .dates(&["purchase_time", "warranty_expires", "valued_at", "sold_time"])
         .meta("total_value", json!(money_value(total)))
@@ -579,19 +645,19 @@ fn list_report(kind: &'static str, items: &[Item], lk: &Lookups) -> Report {
 
 pub fn ls(ctx: &Ctx, a: LsArgs) -> Result<()> {
     let db = ctx.db()?;
-    let lk = Lookups::load(&db)?;
+    let lk = Lookups::load(ctx, &db)?;
     let mut items = filtered(ctx, &db, &lk, &a.filter)?;
     sort_items(&mut items, &lk, a.sort);
     if a.reverse {
         items.reverse();
     }
     items.truncate(a.limit.unwrap_or(usize::MAX));
-    ctx.emit(&list_report("items", &items, &lk))
+    ctx.emit(&list_report("items", &items, &lk, is_structured(ctx.out.format)))
 }
 
 pub fn find(ctx: &Ctx, a: FindArgs) -> Result<()> {
     let db = ctx.db()?;
-    let lk = Lookups::load(&db)?;
+    let lk = Lookups::load(ctx, &db)?;
     let needle = a.text.trim().to_lowercase();
     let mut items: Vec<Item> = filtered(ctx, &db, &lk, &a.filter)?
         .into_iter()
@@ -606,7 +672,7 @@ pub fn find(ctx: &Ctx, a: FindArgs) -> Result<()> {
     if items.is_empty() {
         ctx.info(&format!("nothing matches '{}'", a.text));
     }
-    ctx.emit(&list_report("items", &items, &lk).meta("query", json!(a.text)))
+    ctx.emit(&list_report("items", &items, &lk, is_structured(ctx.out.format)).meta("query", json!(a.text)))
 }
 
 pub fn history(ctx: &Ctx, spec: &str) -> Result<()> {
@@ -642,7 +708,7 @@ pub fn value(ctx: &Ctx, a: ValueArgs) -> Result<()> {
             json!({"value": item.replacement_value.map(money_value), "previous": before.replacement_value.map(money_value), "valued_at": item.valued_at, "note": a.note, "via": "value"}),
         )
     })?;
-    let lk = Lookups::load(&db)?;
+    let lk = Lookups::load(ctx, &db)?;
     ctx.info(&format!(
         "{} {} valued at {} on {}",
         item.asset_id.as_deref().unwrap_or(&item.id),

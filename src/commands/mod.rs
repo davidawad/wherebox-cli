@@ -18,6 +18,7 @@ pub mod profile;
 pub mod regroup;
 pub mod report;
 pub mod security;
+pub mod shelf_life_cmd;
 pub mod shopping;
 
 use crate::cli::Command;
@@ -51,6 +52,7 @@ pub fn dispatch(ctx: &Ctx, cmd: Command) -> Result<Status> {
         Command::Toss(a) => lots::toss(ctx, a),
         Command::Expiring(a) => lots::expiring(ctx, a),
         Command::Preset(c) => preset::run(ctx, c),
+        Command::ShelfLife(c) => shelf_life_cmd::run(ctx, c),
         Command::Par(a) => shopping::par(ctx, a),
         Command::Shopping(a) => shopping::run(ctx, a),
         Command::Report(c) => report::run(ctx, c),

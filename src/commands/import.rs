@@ -39,6 +39,7 @@ pub struct IncomingLot {
     pub expires_at: Option<String>,
     pub best_by: Option<String>,
     pub frozen_at: Option<String>,
+    pub thawed_at: Option<String>,
     pub status: Option<String>,
     /// Location path.
     pub location: Option<String>,
@@ -357,6 +358,7 @@ fn parse_lots(v: &str) -> Result<Vec<IncomingLot>> {
                 expires_at: s("expires_at"),
                 best_by: s("best_by"),
                 frozen_at: s("frozen_at"),
+                thawed_at: s("thawed_at"),
                 status: s("status"),
                 location: s("location"),
                 unit_price: s("unit_price"),
@@ -505,6 +507,9 @@ struct Totals {
 struct Applier<'a> {
     db: &'a Db,
     catalog: &'a Catalog,
+    types: &'a crate::shelf_life::Types,
+    /// Printed dates dropped from lots of non-perishables.
+    warnings: Vec<String>,
     tree: Tree,
     p: Parse<'a>,
     batch: String,
@@ -782,9 +787,10 @@ impl Applier<'_> {
             qty: l.qty,
             acquired_at: day(&l.acquired_at)?,
             opened_at,
-            expires_at: day(&l.expires_at)?,
-            best_by: day(&l.best_by)?,
+            best_by: self.printed_date(item, day(&l.best_by)?.or(day(&l.expires_at)?))?,
             frozen_at: day(&l.frozen_at)?,
+            thawed_at: day(&l.thawed_at)?,
+            confirmed_at: None,
             location_id,
             status,
             created_at: existing.as_ref().map_or_else(crate::util::now_iso, |e| e.created_at.clone()),
@@ -800,6 +806,20 @@ impl Applier<'_> {
             Some(_) => store::update_lot(self.db, &lot),
             None => store::insert_lot(self.db, &lot),
         }
+    }
+
+    /// A printed best-by (or legacy expiry) date is kept for perishables
+    /// and dropped, with a warning, for anything else.
+    fn printed_date(&mut self, item: &Item, date: Option<String>) -> Result<Option<String>> {
+        let Some(d) = date else { return Ok(None) };
+        let fields = store::item_fields(self.db, &item.id)?;
+        let labels = store::item_labels(self.db, &item.id)?;
+        if crate::shelf_life::classify(item, Some(&fields), &labels, true, self.catalog, self.types).is_some() {
+            return Ok(Some(d));
+        }
+        self.warnings
+            .push(format!("{}: best-by/expiry date {d} dropped: not perishable (no shelf-life type)", item.name));
+        Ok(None)
     }
 
     fn link_parents(&mut self) -> Result<Vec<String>> {
@@ -1016,6 +1036,7 @@ pub fn run(ctx: &Ctx, a: ImportArgs) -> Result<()> {
         }
     }
     let catalog = Catalog::load(&ctx.resolved.config_path)?;
+    let types = crate::shelf_life::Types::load(&ctx.resolved.config_path)?;
     let fmts: Vec<String> = m.date_format.iter().cloned().chain(ctx.input_date_formats()).collect();
     let p = Parse { tz: &ctx.tz, date_formats: &fmts };
     let default_property = a.at.as_deref().and_then(|at| store::split_path(at).into_iter().next());
@@ -1064,6 +1085,8 @@ pub fn run(ctx: &Ctx, a: ImportArgs) -> Result<()> {
     let mut ap = Applier {
         db: &db,
         catalog: &catalog,
+        types: &types,
+        warnings: Vec::new(),
         tree: Tree::load(&db)?,
         p,
         batch: batch.clone(),
@@ -1080,7 +1103,8 @@ pub fn run(ctx: &Ctx, a: ImportArgs) -> Result<()> {
                 Err(e) => fail(g[0].line, e.message, &mut plan)?,
             }
         }
-        let warnings = ap.link_parents()?;
+        let mut warnings = std::mem::take(&mut ap.warnings);
+        warnings.extend(ap.link_parents()?);
         if !a.dry_run {
             store::record_batch(&db, &batch, &a.file.to_string_lossy(), format_name(fmt), rows.len())?;
         }

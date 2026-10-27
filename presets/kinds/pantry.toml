@@ -4,13 +4,4 @@ name = "pantry"
 description = "Shelf-stable dry and canned goods"
 category = "food"
 tracks = ["best_by", "opened_at"]
-notes = "High-acid cans (fruit, tomato, pickles) 12-18 months, low-acid (meat, beans, vegetables) 2-5 years; the shorter applies by default."
-
-[shelf_life]
-date = "best_by"
-pantry = "12-60m"
-
-[[sources]]
-covers = "pantry"
-cite = "USDA FSIS FoodKeeper data, version 128 (2018): Canned goods, high acid (#373): 12-18 months; low acid (#372): 2-5 years; Pasta, dry (#335): 2 years; Rice, white (#338): 2 years"
-url = "https://catalog.data.gov/dataset/fsis-foodkeeper-data"
+notes = "Dry and canned goods do not expire: a lot is presumed used up once older than the item's reorder cadence (see `wherebox shelf-life` for opened cans)."

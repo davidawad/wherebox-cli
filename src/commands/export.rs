@@ -21,7 +21,7 @@ fn sort(items: &mut [Item], lk: &Lookups) {
 
 pub fn run(ctx: &Ctx, a: ExportArgs) -> Result<()> {
     let db = ctx.db()?;
-    let lk = Lookups::load(&db)?;
+    let lk = Lookups::load(ctx, &db)?;
     let mut filter = a.filter.clone();
     // An export is a backup: every status unless asked otherwise.
     filter.all = filter.all || filter.status.is_empty();
@@ -50,13 +50,21 @@ pub fn run(ctx: &Ctx, a: ExportArgs) -> Result<()> {
         let records = items
             .iter()
             .map(|i| {
+                // A backup holds what is stored, not estimates.
                 let mut r = item_record(i, &lk);
+                crate::commands::items::COMPUTED_ITEM_KEYS.iter().for_each(|k| {
+                    r.remove(*k);
+                });
+                r.insert("shelf_life".into(), json!(i.shelf_life));
                 let mine: Vec<Record> = lots
                     .iter()
                     .filter(|l| l.item_id == i.id)
-                    .map(|l| lot_record(l, None, &lk.tree))
+                    .map(|l| lot_record(l, None, &lk.tree, None))
                     .map(|mut l| {
                         l.remove("unit");
+                        crate::commands::items::COMPUTED_LOT_KEYS.iter().for_each(|k| {
+                            l.remove(*k);
+                        });
                         l
                     })
                     .collect();

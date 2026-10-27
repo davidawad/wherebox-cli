@@ -38,6 +38,12 @@ data:
   reorder_qty: null
   preferred_vendor: null
   product_ref: null
+  shelf_life: null
+  shelf_life_basis: null
+  on_hand: 1
+  on_hand_basis: logged
+  expires_at: null
+  expiry_basis: null
   parent_item_id: null
   import_ref: 01J9W000000000000000000002
   fields: {}
@@ -77,6 +83,12 @@ data:
   reorder_qty: null
   preferred_vendor: null
   product_ref: null
+  shelf_life: null
+  shelf_life_basis: null
+  on_hand: 1
+  on_hand_basis: logged
+  expires_at: null
+  expiry_basis: null
   parent_item_id: 01J9W000000000000000000002
   import_ref: 01J9W000000000000000000003
   fields: {}
@@ -118,6 +130,12 @@ data:
   reorder_qty: null
   preferred_vendor: null
   product_ref: null
+  shelf_life: null
+  shelf_life_basis: null
+  on_hand: 1
+  on_hand_basis: logged
+  expires_at: null
+  expiry_basis: null
   parent_item_id: null
   import_ref: 01J9W000000000000000000001
   fields:

@@ -4,7 +4,7 @@ name = "produce"
 description = "Fresh fruit and vegetables"
 category = "food"
 tracks = ["best_by", "opened_at"]
-notes = "Shelf life varies by item (FoodKeeper: leaf lettuce 3-7 days, carrots 2-3 weeks, apples 4-6 weeks refrigerated); enter --best-by."
+notes = "Each fruit or vegetable gets its own shelf-life type by name (banana, berries, lettuce...; see `wherebox shelf-life ls`)."
 
 [[sources]]
 covers = "notes"

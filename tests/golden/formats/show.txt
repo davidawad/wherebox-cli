@@ -18,6 +18,8 @@ lifetime_warranty  false
 warranty_expires   2027-05-01
 warranty_details   3 year limited
 notes              Two batteries, one charger
+on_hand            1
+on_hand_basis      logged
 import_ref         01J9W000000000000000000001
 fields             {"Color":"yellow"}
 created_at         2026-01-01T00:00:00Z

@@ -2,10 +2,12 @@
 //!
 //! The list has three parts, per property:
 //!
-//! 1. **below par**: on hand (active lots, else the item quantity) is less
-//!    than `par_level`; buy `reorder_qty`, else up to par.
-//! 2. **expiring**: par items with lots due within the window (default the
-//!    `expiring_within` setting) that would leave less than par on hand.
+//! 1. **below par**: the estimated on hand (lots not presumed used up, else
+//!    the item quantity; see [`crate::onhand`]) is less than `par_level`;
+//!    buy `reorder_qty`, else up to par.
+//! 2. **expiring**: par items with perishable lots expiring (computed
+//!    expiry) within the window (default the `expiring_within` setting) that
+//!    would leave less than par on hand.
 //! 3. **reorder**: learned cadence. Purchases are the item's lot acquisition
 //!    dates (plus its purchase date). With three or more, the cadence is the
 //!    median gap between them. With fewer, a `Recurring` custom field
@@ -17,7 +19,7 @@
 //!    dropped, not due.
 //! 4. **list** (`--include-list`): what a list still needs (`list shop`).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use chrono::NaiveDate;
 use serde_json::json;
@@ -26,6 +28,7 @@ use crate::cli::{ParArgs, ShoppingArgs};
 use crate::context::Ctx;
 use crate::db::Db;
 use crate::error::Result;
+use crate::onhand::{learned_cadence, purchases, ItemEst};
 use crate::output::{to_record, Format, Record, Report};
 use crate::profiles::Profile;
 use crate::store::{self, Item, Lot, Tree};
@@ -60,63 +63,29 @@ pub fn par(ctx: &Ctx, a: ParArgs) -> Result<()> {
         Some(p) => format!("par level of {}: {} {unit}", item.name, fmt_qty(p)),
         None => format!("{} has no par level", item.name),
     });
-    let lk = crate::commands::items::Lookups::load(&db)?;
+    let lk = crate::commands::items::Lookups::load(ctx, &db)?;
     ctx.emit_mutation(&Report::object("item", crate::commands::items::item_record(&item, &lk)))
 }
 
-/// Quantity on hand: active lots when the item tracks lots, else its quantity.
-fn on_hand(item: &Item, lots: &[&Lot]) -> f64 {
-    if lots.is_empty() {
-        item.quantity as f64
-    } else {
-        lots.iter().filter(|l| l.is_active()).map(|l| l.qty).sum()
+/// Quantity on hand: the estimate, else active lots when the item tracks
+/// lots, else its quantity; and its text (`~2` when estimated).
+fn on_hand(item: &Item, lots: &[&Lot], est: Option<&ItemEst>) -> (f64, String) {
+    match est {
+        Some(e) => (e.on_hand, e.on_hand_text()),
+        None if lots.is_empty() => (item.quantity as f64, item.quantity.to_string()),
+        None => {
+            let q = lots.iter().filter(|l| l.is_active()).map(|l| l.qty).sum();
+            (q, fmt_qty(q))
+        }
     }
 }
 
-/// The `Recurring` field as an interval in days: `Some(Some(d))` for a
-/// cadence, `Some(None)` for "yes, learn it", `None` for no / absent.
-fn recurring(fields: Option<&BTreeMap<String, String>>) -> Option<Option<f64>> {
-    let v = fields?.iter().find(|(k, _)| k.eq_ignore_ascii_case("recurring"))?.1.trim().to_ascii_lowercase();
-    let v = v.strip_prefix("every ").unwrap_or(&v).to_string();
-    match v.as_str() {
-        "no" | "false" | "0" | "n" | "" => None,
-        "daily" | "day" => Some(Some(1.0)),
-        "weekly" | "week" => Some(Some(7.0)),
-        "biweekly" | "fortnightly" => Some(Some(14.0)),
-        "monthly" | "month" => Some(Some(crate::util::parse_duration_days("1m").unwrap_or(30.0))),
-        "yearly" | "annually" | "year" => Some(Some(crate::util::parse_duration_days("1y").unwrap_or(365.0))),
-        other => Some(parse_duration_days(&other.replace(' ', "")).ok().filter(|d| *d > 0.0)),
+/// When a lot expires: its estimate's computed expiry, else a printed best-by.
+fn expires(l: &Lot, est: Option<&ItemEst>) -> Option<String> {
+    match est {
+        Some(e) => e.lot(&l.id)?.expiry.as_ref().map(|x| x.date.to_string()),
+        None => l.best_by.clone(),
     }
-}
-
-/// The `Avg Interval Days` field, when positive.
-fn avg_interval(fields: Option<&BTreeMap<String, String>>) -> Option<f64> {
-    crate::consumable::field(fields, "Avg Interval Days")?.trim().parse::<f64>().ok().filter(|d| *d > 0.0)
-}
-
-/// Median gap in days between consecutive dates (sorted, two or more).
-fn median_gap(dates: &[NaiveDate]) -> f64 {
-    let mut gaps: Vec<i64> = dates.windows(2).map(|w| (w[1] - w[0]).num_days()).collect();
-    gaps.sort_unstable();
-    let n = gaps.len();
-    if n % 2 == 1 {
-        gaps[n / 2] as f64
-    } else {
-        (gaps[n / 2 - 1] + gaps[n / 2]) as f64 / 2.0
-    }
-}
-
-/// Purchase dates of an item, oldest first, without duplicates.
-fn purchases(item: &Item, lots: &[&Lot]) -> Vec<NaiveDate> {
-    let mut d: Vec<NaiveDate> = lots
-        .iter()
-        .filter_map(|l| l.acquired_at.as_deref())
-        .chain(item.purchase_time.as_deref())
-        .filter_map(|s| date_of(s).ok())
-        .collect();
-    d.sort();
-    d.dedup();
-    d
 }
 
 struct Line<'a> {
@@ -142,6 +111,7 @@ fn needs<'a>(
     items: &'a [Item],
     lots: &[Lot],
     fields: &BTreeMap<String, BTreeMap<String, String>>,
+    est: &HashMap<String, ItemEst>,
     within: i64,
     today: NaiveDate,
     cutoff: NaiveDate,
@@ -150,7 +120,9 @@ fn needs<'a>(
     let mut dropped = 0;
     for item in items.iter().filter(|i| !i.is_gone()) {
         let mine: Vec<&Lot> = lots.iter().filter(|l| l.item_id == item.id).collect();
-        let have = on_hand(item, &mine);
+        let e = est.get(&item.id);
+        let counts = |l: &Lot| e.map_or(l.is_active() && l.qty > 0.0, |e| e.counts(l));
+        let (have, have_text) = on_hand(item, &mine, e);
         let unit = item.unit.as_deref().unwrap_or("ea");
         if let Some(par) = item.par_level {
             if have < par {
@@ -158,19 +130,23 @@ fn needs<'a>(
                     item,
                     item.reorder_qty.unwrap_or(par - have),
                     "below par",
-                    format!("{} of {} {unit} on hand", fmt_qty(have), fmt_qty(par)),
+                    format!("{have_text} of {} {unit} on hand", fmt_qty(par)),
                 ));
                 continue;
             }
-            let due: Vec<(&Lot, i64)> = mine
+            let due: Vec<(&Lot, String, i64)> = mine
                 .iter()
-                .filter(|l| l.is_active() && l.qty > 0.0)
-                .filter_map(|l| Some((*l, crate::util::days_until(l.due()?, today)?)))
-                .filter(|(_, d)| *d <= within)
+                .filter(|l| counts(l))
+                .filter_map(|l| {
+                    let d = expires(l, e)?;
+                    let left = crate::util::days_until(&d, today)?;
+                    Some((*l, d, left))
+                })
+                .filter(|(_, _, d)| *d <= within)
                 .collect();
-            let going: f64 = due.iter().map(|(l, _)| l.qty).sum();
+            let going: f64 = due.iter().map(|(l, _, _)| l.qty).sum();
             if !due.is_empty() && have - going < par {
-                let first = due.iter().map(|(l, _)| l.due().unwrap_or_default()).min().unwrap_or_default();
+                let first = due.iter().map(|(_, d, _)| d.clone()).min().unwrap_or_default();
                 out.push(Line::new(
                     item,
                     item.reorder_qty.unwrap_or(par - (have - going)),
@@ -192,21 +168,8 @@ fn needs<'a>(
         if durable && mine.is_empty() {
             continue;
         }
-        let rec = recurring(f);
         let dates = purchases(item, &mine);
-        let interval = match rec {
-            _ if dates.len() >= 3 => Some((median_gap(&dates), "median of purchases")),
-            _ if dates.is_empty() => None,
-            Some(Some(d)) => Some((d, "Recurring field")),
-            Some(None) => match avg_interval(f) {
-                Some(d) => Some((d, "Avg Interval Days")),
-                None if dates.len() >= 2 => Some((median_gap(&dates), "purchase history")),
-                None => None,
-            },
-            None => None,
-        };
-        let Some((every, from)) = interval.filter(|(d, _)| *d >= 1.0) else { continue };
-        let every = every.round();
+        let Some((every, from)) = learned_cadence(item, &mine, f) else { continue };
         let last = *dates.last().expect("interval needs a purchase");
         if last < cutoff {
             dropped += 1;
@@ -216,7 +179,7 @@ fn needs<'a>(
         let window_start = today - chrono::Duration::days(every as i64);
         let stocked = mine.iter().any(|l| {
             let got = l.acquired_at.as_deref().or(Some(l.created_at.as_str())).and_then(|d| date_of(d).ok());
-            l.is_active() && l.qty > 0.0 && got.is_some_and(|d| d > window_start)
+            counts(l) && got.is_some_and(|d| d > window_start)
         });
         if since as f64 >= every && !stocked {
             let last_qty = mine.iter().filter(|l| l.acquired_at.is_some()).max_by_key(|l| l.fifo_key()).map(|l| l.qty);
@@ -250,7 +213,9 @@ fn rows_for(
     let fields: BTreeMap<String, BTreeMap<String, String>> = store::all_item_fields(db)?.into_iter().collect();
     let tree = Tree::load(db)?;
     let today = ctx.tz.today();
-    let (mut lines, gone) = needs(&items, &lots, &fields, within, today, date_before(today, since));
+    let cfg = crate::onhand::Config::load(ctx)?;
+    let est = crate::onhand::Estimator::load(&cfg, db, today)?.all(&items, &lots);
+    let (mut lines, gone) = needs(&items, &lots, &fields, &est, within, today, date_before(today, since));
     *dropped += gone;
     let order = |r: &str| ["below par", "expiring", "reorder"].iter().position(|x| *x == r).unwrap_or(9);
     lines.sort_by(|a, b| {
@@ -358,6 +323,10 @@ mod tests {
 
     const OLD: NaiveDate = NaiveDate::MIN;
 
+    fn none_est() -> HashMap<String, ItemEst> {
+        HashMap::new()
+    }
+
     fn item(id: &str) -> Item {
         Item { id: id.into(), name: id.into(), quantity: 0, status: "owned".into(), ..Default::default() }
     }
@@ -390,21 +359,21 @@ mod tests {
         filters.purchase_time = Some("2025-12-15".into());
         let items = [item("coffee"), filters, item("salt")];
         fields.insert("filters".to_string(), BTreeMap::from([("Recurring".to_string(), "3m".to_string())]));
-        let out = needs(&items, &lots, &fields, 7, today, OLD).0;
+        let out = needs(&items, &lots, &fields, &none_est(), 7, today, OLD).0;
         let names: Vec<&str> = out.iter().map(|l| l.item.name.as_str()).collect();
         assert_eq!(names, ["coffee"], "filters not yet due (3 months from 2025-12-15)");
         assert!(out[0].detail.contains("every ~9 days"), "{}", out[0].detail);
         let later = NaiveDate::from_ymd_opt(2026, 2, 2).unwrap();
-        assert!(needs(&items, &lots[..2], &fields, 7, later, OLD).0.is_empty());
+        assert!(needs(&items, &lots[..2], &fields, &none_est(), 7, later, OLD).0.is_empty());
         let june = NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
-        let out = needs(&items, &[], &fields, 7, june, OLD).0;
+        let out = needs(&items, &[], &fields, &none_est(), 7, june, OLD).0;
         assert_eq!(out.len(), 1);
         assert_eq!((out[0].item.name.as_str(), out[0].reason), ("filters", "reorder"));
         fields.insert("salt".to_string(), BTreeMap::from([("Recurring".to_string(), "yes".to_string())]));
         // two purchases a year apart: not due until a year after the last
-        assert!(!needs(&items, &lots, &fields, 7, june, OLD).0.iter().any(|l| l.item.name == "salt"));
+        assert!(!needs(&items, &lots, &fields, &none_est(), 7, june, OLD).0.iter().any(|l| l.item.name == "salt"));
         let next_year = NaiveDate::from_ymd_opt(2027, 1, 2).unwrap();
-        assert!(needs(&items, &lots, &fields, 7, next_year, OLD).0.iter().any(|l| l.item.name == "salt"));
+        assert!(needs(&items, &lots, &fields, &none_est(), 7, next_year, OLD).0.iter().any(|l| l.item.name == "salt"));
     }
 
     #[test]
@@ -420,7 +389,7 @@ mod tests {
         ];
         let items = [item("towels")];
         let none = BTreeMap::new();
-        let (out, dropped) = needs(&items, &lots, &none, 7, today, OLD);
+        let (out, dropped) = needs(&items, &lots, &none, &none_est(), 7, today, OLD);
         assert_eq!(dropped, 0);
         assert_eq!((out[0].cadence, out[0].overdue, out[0].last), (Some(40.0), Some(16), Some(d("2026-08-28"))));
         assert!(out[0].detail.contains("every ~40 days (median of purchases)"), "{}", out[0].detail);
@@ -432,9 +401,9 @@ mod tests {
         fresh.acquired_at = None;
         fresh.created_at = "2026-10-01T00:00:00Z".into();
         more.push(fresh);
-        assert!(needs(&items, &more, &none, 7, today, OLD).0.is_empty());
+        assert!(needs(&items, &more, &none, &none_est(), 7, today, OLD).0.is_empty());
         // last bought before the cutoff: dropped, not due
-        let (out, dropped) = needs(&items, &lots, &none, 7, today, d("2026-09-01"));
+        let (out, dropped) = needs(&items, &lots, &none, &none_est(), 7, today, d("2026-09-01"));
         assert!(out.is_empty());
         assert_eq!(dropped, 1);
         // no lot history: Recurring=true with Avg Interval Days
@@ -448,8 +417,8 @@ mod tests {
             ]),
         )]);
         let soap = [soap];
-        assert!(needs(&soap, &[], &f, 7, d("2026-10-10"), OLD).0.is_empty(), "46 days not yet passed");
-        let (out, _) = needs(&soap, &[], &f, 7, d("2026-10-20"), OLD);
+        assert!(needs(&soap, &[], &f, &none_est(), 7, d("2026-10-10"), OLD).0.is_empty(), "46 days not yet passed");
+        let (out, _) = needs(&soap, &[], &f, &none_est(), 7, d("2026-10-20"), OLD);
         assert_eq!((out[0].cadence, out[0].overdue), (Some(46.0), Some(3)));
         assert!(out[0].detail.contains("(Avg Interval Days)"), "{}", out[0].detail);
         // the same, but Kind=durable (shoes bought three times): never a reorder
@@ -463,7 +432,7 @@ mod tests {
                 ("Avg Interval Days".to_string(), "5.5".to_string()),
             ]),
         )]);
-        assert!(needs(&[shoes], &[], &f, 7, d("2026-10-20"), OLD).0.is_empty());
+        assert!(needs(&[shoes], &[], &f, &none_est(), 7, d("2026-10-20"), OLD).0.is_empty());
     }
 
     #[test]
@@ -478,20 +447,9 @@ mod tests {
         l.best_by = Some("2026-03-03".into());
         let lots = vec![lot("milk", "2026-02-28", 1.0, "sealed"), l];
         let (items, none) = ([milk, eggs], BTreeMap::new());
-        let out = needs(&items, &lots, &none, 7, today, OLD).0;
+        let out = needs(&items, &lots, &none, &none_est(), 7, today, OLD).0;
         assert_eq!((out[0].reason, out[0].qty), ("below par", 1.0));
         assert_eq!((out[1].reason, out[1].qty), ("expiring", 12.0));
-        assert!(needs(&[], &lots, &none, 1, today, OLD).0.is_empty());
-    }
-
-    #[test]
-    fn recurring_values() {
-        let f = |v: &str| recurring(Some(&BTreeMap::from([("recurring".to_string(), v.to_string())])));
-        assert_eq!(f("9d"), Some(Some(9.0)));
-        assert_eq!(f("every 2 w"), Some(Some(14.0)));
-        assert_eq!(f("weekly"), Some(Some(7.0)));
-        assert_eq!(f("yes"), Some(None));
-        assert_eq!(f("no"), None);
-        assert_eq!(recurring(None), None);
+        assert!(needs(&[], &lots, &none, &none_est(), 1, today, OLD).0.is_empty());
     }
 }

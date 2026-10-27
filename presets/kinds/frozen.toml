@@ -3,17 +3,9 @@
 name = "frozen"
 description = "Food bought frozen: prepared meals and entrees"
 category = "food"
+shelf_life_type = "frozen-meal"
 tracks = ["frozen_at", "best_by"]
 notes = "Freezer times are for quality; food kept frozen at 0 F stays safe. Other frozen goods: vegetables 10-18 months (#331), ice cream 6 months (#317)."
-
-[shelf_life]
-date = "best_by"
-freezer = "12m"
-
-[[sources]]
-covers = "freezer"
-cite = "USDA FSIS FoodKeeper data, version 128 (2018): Frozen entrees, prepared meals (#330): freezer 12 months; not for the refrigerator"
-url = "https://catalog.data.gov/dataset/fsis-foodkeeper-data"
 
 [[sources]]
 covers = "notes"

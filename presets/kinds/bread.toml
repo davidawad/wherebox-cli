@@ -3,14 +3,5 @@
 name = "bread"
 description = "Commercial bread, rolls, buns and flat breads"
 category = "food"
+shelf_life_type = "bread"
 tracks = ["best_by", "frozen_at"]
-
-[shelf_life]
-date = "best_by"
-pantry = "14-18d"
-freezer = "3-5m"
-
-[[sources]]
-covers = "pantry, freezer"
-cite = "USDA FSIS FoodKeeper data, version 128 (2018): Commercial bread products (#195): pantry 14-18 days, freeze 3-5 months"
-url = "https://catalog.data.gov/dataset/fsis-foodkeeper-data"

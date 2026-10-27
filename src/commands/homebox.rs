@@ -34,8 +34,10 @@ pub const LABELS_ALT: &str = "HB.labels";
 pub const FIELD_PREFIX: &str = "HB.field.";
 pub const SOURCE: &str = "Source";
 /// Lot columns, in export order.
+/// `Expires` is read on import as a printed best-by date (older exports
+/// wrote stored expiry dates there) and never written: expiry is computed.
 pub const LOT_FIELDS: &[&str] =
-    &["Lot Qty", "Acquired", "Opened", "Expires", "Best By", "Frozen", "Lot Status", "Lot Price", "Lot Ref"];
+    &["Lot Qty", "Acquired", "Opened", "Expires", "Best By", "Frozen", "Thawed", "Lot Status", "Lot Price", "Lot Ref"];
 pub const LOT_SEP: &str = "#lot:";
 const INSIDE_PREFIX: &str = "Inside: ";
 const INSIDE_TAG: &str = "(wherebox:";
@@ -142,9 +144,10 @@ pub fn export_rows(items: &[Item], lk: &Lookups, lots: &[Lot], all: &[Item]) -> 
                 Some(fmt_qty(l.qty)),
                 l.acquired_at.clone(),
                 l.opened_at.clone(),
-                l.expires_at.clone(),
+                None,
                 l.best_by.clone(),
                 l.frozen_at.clone(),
+                l.thawed_at.clone(),
                 Some(l.status.clone()),
                 l.unit_price.map(crate::util::fmt_money),
                 l.source_ref.clone(),
@@ -262,6 +265,7 @@ pub fn parse_row(line: usize, row: &RawRow) -> Result<Incoming> {
             expires_at: get("Expires"),
             best_by: get("Best By"),
             frozen_at: get("Frozen"),
+            thawed_at: get("Thawed"),
             status: get("Lot Status"),
             location: inc.location.clone().flatten(),
             unit_price: get("Lot Price"),

@@ -27,11 +27,11 @@ fn eggs() -> Env {
         "6",
         "--acquired",
         "2025-12-20",
-        "--expires",
+        "--best-by",
         "2026-01-20",
     ]);
-    e.run(&["lot", "add", "Eggs", "12", "--acquired", "2025-12-30", "--expires", "2026-02-01"]);
-    e.run(&["lot", "add", "Eggs", "12", "--acquired", "2025-12-25", "--expires", "2026-01-25"]);
+    e.run(&["lot", "add", "Eggs", "12", "--acquired", "2025-12-30", "--best-by", "2026-02-01"]);
+    e.run(&["lot", "add", "Eggs", "12", "--acquired", "2025-12-25", "--best-by", "2026-01-25"]);
     e
 }
 
@@ -113,10 +113,14 @@ fn items_without_lots_count_down() {
 fn expiring_lists_due_lots_freezer_included() {
     // "today" is 2026-01-01 (pinned).
     let e = Env::pinned();
-    e.run(&["add", "Yogurt", "--at", "Home / Kitchen / Fridge", "--lot-qty", "4", "--expires", "2026-01-03"]);
+    e.run(&["add", "Yogurt", "--at", "Home / Kitchen / Fridge", "--lot-qty", "4", "--best-by", "2026-01-03"]);
     e.run(&["add", "Bread", "--at", "Home / Kitchen / Pantry", "--best-by", "2025-12-30"]);
     e.run(&["add", "Salmon", "--at", "Home / Garage / Freezer", "--frozen", "2025-12-01", "--best-by", "2026-01-06"]);
-    e.run(&["add", "Rice", "--at", "Pantry", "--best-by", "2027-01-01"]);
+    e.run(&["add", "Rice", "--at", "Pantry", "--lot"]);
+    // Non-perishables have no expiry, printed or computed.
+    let err = e.fail(&["add", "Basmati Rice", "--at", "Pantry", "--best-by", "2027-01-01"], 4);
+    assert!(err.contains("not perishable"), "{err}");
+    e.fail(&["add", "Milk", "--expires", "2026-01-09"], 2);
     e.run(&["add", "Hammer", "--at", "Garage"]);
     let v = e.json(&["expiring"]);
     let got: Vec<(String, i64, String)> = rows(&v)

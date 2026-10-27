@@ -15,6 +15,7 @@ use toml_edit::{value, Array, ArrayOfTables, DocumentMut, Item as TItem, Table};
 use crate::db::Db;
 use crate::error::{AppError, Result};
 use crate::matching::{self, NameScore, Ranked, UrlKey};
+use crate::onhand::ItemEst;
 use crate::store::{self, Item, Lot, Tree};
 
 /// List types with their own behaviour; any other string is a custom type
@@ -508,6 +509,8 @@ pub struct Inventory {
     pub labels: Vec<Vec<String>>,
     pub lots: Vec<Vec<Lot>>,
     pub tree: Tree,
+    /// Estimated on hand per item (empty: logged quantities, printed dates).
+    pub est: Vec<ItemEst>,
     ids: Vec<BTreeSet<String>>,
     urls: Vec<Vec<UrlKey>>,
     tokens: Vec<Vec<String>>,
@@ -568,7 +571,7 @@ impl Inventory {
             })
             .collect();
         let tokens = items.iter().map(|i| matching::name_tokens(&i.name)).collect();
-        Self { profile, today, items, fields, labels, lots, tree, ids, urls, tokens }
+        Self { profile, today, items, fields, labels, lots, tree, est: Vec::new(), ids, urls, tokens }
     }
 
     /// Lower-case location names of an item location, root first.
@@ -836,6 +839,8 @@ pub struct Contribution {
     pub unit: String,
     /// Expired lots, in the entry's unit when convertible (else the item's).
     pub expired: f64,
+    /// Some lot here is presumed used up: the quantity is an estimate.
+    pub estimated: bool,
     /// Durables: the item counts as owned (wishlist "already own").
     pub owned: bool,
     /// Kits and packing lists: owned, but lent out (so not counted).
@@ -883,18 +888,25 @@ pub fn contribution(inv: &Inventory, i: usize, at: &[String], want_unit: &str, p
         let raw = if ok { item.quantity.max(0) as f64 } else { 0.0 };
         let (qty, basis) = in_unit(raw, &unit, &item.name, want_unit);
         let lent = present_only && item.status == "lent";
-        return Contribution { qty, raw, unit, expired: 0.0, owned: ok, lent, basis };
+        return Contribution { qty, raw, unit, expired: 0.0, estimated: false, owned: ok, lent, basis };
     }
     let today = inv.today.to_string();
     let here = |l: &&Lot| at.is_empty() || inv.loc_matches(l.location_id.or(item.location_id), at);
     let active: Vec<&Lot> = lots.iter().filter(|l| l.is_active() && l.qty > 0.0).filter(here).collect();
+    let est = inv.est.get(i);
+    // Without estimates only a printed best-by date says a lot is past it.
+    let expired_lot = |l: &Lot| match est {
+        Some(e) => e.lot(&l.id).is_some_and(|x| x.expired),
+        None => l.best_by.as_deref().is_some_and(|d| d < today.as_str()),
+    };
+    let counted = |l: &Lot| !expired_lot(l) && est.is_none_or(|e| e.counts(l));
     // `+ 0.0`: an empty f64 sum is `-0.0`.
-    let expired =
-        active.iter().filter(|l| l.due().is_some_and(|d| d < today.as_str())).map(|l| l.qty).sum::<f64>() + 0.0;
-    let raw = active.iter().filter(|l| l.due().is_none_or(|d| d >= today.as_str())).map(|l| l.qty).sum::<f64>() + 0.0;
+    let expired = active.iter().filter(|l| expired_lot(l)).map(|l| l.qty).sum::<f64>() + 0.0;
+    let raw = active.iter().filter(|l| counted(l)).map(|l| l.qty).sum::<f64>() + 0.0;
+    let estimated = est.is_some_and(|e| active.iter().any(|l| e.lot(&l.id).is_some_and(|x| x.presumed_used_up)));
     let (qty, basis) = in_unit(raw, &unit, &item.name, want_unit);
     let expired = in_unit(expired, &unit, &item.name, want_unit).0.unwrap_or(expired);
-    Contribution { qty, raw, unit, expired, owned: raw > 0.0, lent: false, basis }
+    Contribution { qty, raw, unit, expired, estimated, owned: raw > 0.0, lent: false, basis }
 }
 
 /// Status of one entry.
@@ -937,6 +949,8 @@ pub struct EntryCheck {
     pub unit: String,
     pub have: f64,
     pub expired: f64,
+    /// The have count rests on an estimate.
+    pub estimated: bool,
     pub status: Status,
     pub ambiguous: bool,
     pub matches: Vec<(Match, Contribution)>,
@@ -956,6 +970,7 @@ pub fn check_entry(inv: &Inventory, list: &ListFile, entry: &Entry, r: &Resolved
         .collect();
     let have = matches.iter().filter_map(|(_, c)| c.qty).sum::<f64>() + 0.0;
     let expired = matches.iter().map(|(_, c)| c.expired).sum::<f64>() + 0.0;
+    let estimated = matches.iter().any(|(_, c)| c.estimated);
     let unknown = matches.iter().any(|(_, c)| c.qty.is_none() && c.raw > 0.0);
     let status = if list.is_wishlist() {
         if matches.iter().any(|(_, c)| c.owned) && !ambiguous {
@@ -976,7 +991,7 @@ pub fn check_entry(inv: &Inventory, list: &ListFile, entry: &Entry, r: &Resolved
     } else {
         Status::Missing
     };
-    EntryCheck { want, unit, have, expired, status, ambiguous, matches }
+    EntryCheck { want, unit, have, expired, estimated, status, ambiguous, matches }
 }
 
 /// `ready`, or `missing N of M` (non-optional entries not had).

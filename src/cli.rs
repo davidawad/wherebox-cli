@@ -137,11 +137,14 @@ pub enum Command {
     Eat(ConsumeArgs),
     /// Throw out (or with --spoiled, log spoilage of) a consumable, oldest lot first
     Toss(TossArgs),
-    /// Lots expiring soon (or already expired), freezer included
+    /// Perishable lots expiring soon (or already expired; computed expiry), freezer included
     Expiring(ExpiringArgs),
     /// Kind presets: what a kind of item tracks, its defaults and alerts
     #[command(subcommand)]
     Preset(PresetCmd),
+    /// Shelf-life types: how long perishables keep in the pantry, fridge and freezer
+    #[command(subcommand, name = "shelf-life")]
+    ShelfLife(ShelfLifeCmd),
     /// Set (or with `none`, clear) how many of an item to keep on hand
     Par(ParArgs),
     /// Shopping list: below par, expiring par items, and learned reorders
@@ -265,6 +268,10 @@ pub struct ItemFlags {
     /// UPC / ASIN
     #[arg(long)]
     pub product_ref: Option<String>,
+    /// Shelf-life type (see `wherebox shelf-life ls`), or `none` for never perishable
+    /// (default: classified by name)
+    #[arg(long, value_name = "TYPE")]
+    pub shelf_life: Option<String>,
     /// Custom field NAME=VALUE (repeatable; an empty VALUE removes it)
     #[arg(long = "field", value_name = "NAME=VALUE")]
     pub fields: Vec<String>,
@@ -273,12 +280,11 @@ pub struct ItemFlags {
     pub sources: Vec<String>,
 }
 
-/// Dates of a lot (`add` with any of these creates a first lot).
+/// Dates of a lot (`add` with any of these creates a first lot). There is
+/// no expiry date: it is computed from the item's shelf-life type.
 #[derive(Debug, Args, Clone, Default)]
 pub struct LotFlags {
-    /// Use-by / expiration date
-    #[arg(long)]
-    pub expires: Option<String>,
+    /// Printed best-by date (perishables only; overrides the computed expiry; empty clears)
     #[arg(long)]
     pub best_by: Option<String>,
     /// Date opened (marks the lot open)
@@ -294,11 +300,7 @@ pub struct LotFlags {
 
 impl LotFlags {
     pub fn any(&self) -> bool {
-        self.expires.is_some()
-            || self.best_by.is_some()
-            || self.opened.is_some()
-            || self.frozen.is_some()
-            || self.acquired.is_some()
+        self.best_by.is_some() || self.opened.is_some() || self.frozen.is_some() || self.acquired.is_some()
     }
 }
 
@@ -579,6 +581,17 @@ pub enum LotCmd {
     },
     /// Delete a lot and its consumption log
     Rm { lot: String },
+    /// Assert what is on hand today: restarts the "presumed used up" clock
+    /// of every active lot; with --qty the oldest lots are drawn down so N remains
+    Confirm {
+        item: String,
+        /// How much is on hand now (default: every active lot, as logged)
+        #[arg(long)]
+        qty: Option<String>,
+        /// Only this lot
+        #[arg(long)]
+        lot: Option<String>,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -633,6 +646,46 @@ pub enum PresetCmd {
     Ls,
     /// What a preset tracks, its defaults, alerts and sources
     Show { name: String },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ShelfLifeCmd {
+    /// Every shelf-life type (built-in and from config) with its figures
+    #[command(alias = "list")]
+    Ls,
+    /// One type: figures, synonyms, source and origin
+    Show {
+        #[arg(value_name = "TYPE")]
+        name: String,
+    },
+    /// Override a type's figures (or add a new type) in config.toml
+    Set {
+        #[arg(value_name = "TYPE")]
+        name: String,
+        /// Days in the pantry (5d, 2w, 6m, 1y; `none` = not recommended)
+        #[arg(long, value_name = "DURATION")]
+        pantry: Option<String>,
+        #[arg(long, value_name = "DURATION")]
+        fridge: Option<String>,
+        #[arg(long, value_name = "DURATION")]
+        freezer: Option<String>,
+        /// Once opened
+        #[arg(long, value_name = "DURATION")]
+        opened: Option<String>,
+        /// Another name to classify items by (repeatable)
+        #[arg(long = "synonym", value_name = "NAME")]
+        synonyms: Vec<String>,
+        #[arg(long)]
+        description: Option<String>,
+        /// fruit, vegetable, dairy, eggs, meat, poultry, seafood, bakery, prepared, opened, other
+        #[arg(long)]
+        group: Option<String>,
+    },
+    /// Remove a type's config table (back to the built-in figures)
+    Reset {
+        #[arg(value_name = "TYPE")]
+        name: String,
+    },
 }
 
 #[derive(Debug, Args)]

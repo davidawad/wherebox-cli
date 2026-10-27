@@ -1,9 +1,12 @@
-//! Consumables: `lot add|ls|edit|rm`, `use`, `eat`, `toss` and `expiring`.
+//! Consumables: `lot add|ls|edit|rm|confirm`, `use`, `eat`, `toss` and
+//! `expiring`.
 //!
 //! A lot is one purchase of a consumable with its own quantity, dates and
 //! place (fridge, freezer, pantry shelf). Consumption is logged against the
 //! oldest lot first (see [`Lot::fifo_key`]); an item that tracks lots keeps
-//! `quantity` equal to what is left on hand.
+//! `quantity` equal to what is logged as left. Expiry is computed (see
+//! [`crate::shelf_life`]); what is presumed used up is estimated (see
+//! [`crate::onhand`]).
 
 use serde_json::json;
 
@@ -13,7 +16,9 @@ use crate::context::Ctx;
 use crate::db::Db;
 use crate::error::{AppError, Result};
 use crate::fields::Parse;
+use crate::onhand::{Config, Estimator, ItemEst};
 use crate::output::{to_record, Record, Report};
+use crate::shelf_life::Storage;
 use crate::store::{self, check_choice, Item, Lot, Tree, LOT_STATUSES};
 use crate::util::{fmt_qty, parse_day, parse_duration_days, parse_qty};
 
@@ -26,7 +31,7 @@ fn today(ctx: &Ctx) -> String {
     ctx.tz.today().format("%Y-%m-%d").to_string()
 }
 
-/// A new lot from `--expires`/`--best-by`/... flags (acquired today by default).
+/// A new lot from `--best-by`/`--opened`/... flags (acquired today by default).
 pub fn new_lot(item_id: &str, qty: f64, d: &LotFlags, location_id: Option<i64>, p: &Parse, today: &str) -> Result<Lot> {
     let day = |v: &Option<String>| v.as_deref().map(|s| p_day(p, s)).transpose();
     let opened_at = day(&d.opened)?;
@@ -37,9 +42,10 @@ pub fn new_lot(item_id: &str, qty: f64, d: &LotFlags, location_id: Option<i64>, 
         acquired_at: Some(day(&d.acquired)?.unwrap_or_else(|| today.to_string())),
         status: if opened_at.is_some() { "open".into() } else { "sealed".into() },
         opened_at,
-        expires_at: day(&d.expires)?,
         best_by: day(&d.best_by)?,
         frozen_at: day(&d.frozen)?,
+        thawed_at: None,
+        confirmed_at: None,
         location_id,
         created_at: crate::util::now_iso(),
         unit_price: None,
@@ -60,11 +66,59 @@ pub fn run(ctx: &Ctx, cmd: LotCmd) -> Result<()> {
             edit(ctx, &lot, qty.as_deref(), at.as_deref(), status.as_deref(), &dates)
         }
         LotCmd::Rm { lot } => rm(ctx, &lot),
+        LotCmd::Confirm { item, qty, lot } => confirm(ctx, &item, qty.as_deref(), lot.as_deref()),
     }
 }
 
-fn record(l: &Lot, item: &Item, tree: &Tree) -> Record {
-    let mut r = lot_record(l, item.unit.as_deref(), tree);
+/// A printed best-by date is for perishables only.
+pub fn check_best_by(item: &Item, est: &ItemEst, best_by: Option<&str>) -> Result<()> {
+    if best_by.is_some() && est.class.is_none() {
+        return Err(AppError::invalid(format!(
+            "{} is not perishable, so it has no best-by date (give it a type with `wherebox edit {} --shelf-life <type>`; see `wherebox shelf-life ls`)",
+            item.name,
+            item.asset_id.as_deref().unwrap_or(&item.id)
+        )));
+    }
+    Ok(())
+}
+
+/// Moving into a freezer starts the freezer clock (`frozen_at` = today,
+/// `thawed_at` cleared); moving out of one sets `thawed_at`.
+pub fn restorage(l: &mut Lot, before: Storage, after: Storage, today: &str) {
+    if !l.is_active() || before == after {
+        return;
+    }
+    if after == Storage::Freezer {
+        l.frozen_at = Some(today.to_string());
+        l.thawed_at = None;
+    } else if before == Storage::Freezer {
+        l.thawed_at = Some(today.to_string());
+    }
+}
+
+/// Re-base the lots that follow an item (no location of their own) when
+/// the item moves between pantry, fridge and freezer.
+pub fn item_moved(db: &Db, tree: &Tree, before: Option<i64>, after: &Item, today: &str) -> Result<()> {
+    let (from, to) = (Storage::of_location(tree, before), Storage::of_location(tree, after.location_id));
+    if from == to {
+        return Ok(());
+    }
+    for mut l in store::lots_for(db, &after.id)?.into_iter().filter(|l| l.location_id.is_none() && l.is_active()) {
+        restorage(&mut l, from, to, today);
+        store::update_lot(db, &l)?;
+    }
+    Ok(())
+}
+
+/// One item's estimate (with the configuration and database as they are now).
+pub fn estimate(ctx: &Ctx, db: &Db, item: &Item) -> Result<ItemEst> {
+    let cfg = Config::load(ctx)?;
+    let e = Estimator::load(&cfg, db, ctx.tz.today())?;
+    Ok(e.item(item, &store::lots_for(db, &item.id)?))
+}
+
+fn record(l: &Lot, item: &Item, est: &ItemEst, tree: &Tree) -> Record {
+    let mut r = lot_record(l, item.unit.as_deref(), tree, Some(est));
     r.insert("item".into(), json!(item.name));
     r.insert("asset_id".into(), json!(item.asset_id));
     r.insert("item_id".into(), json!(item.id));
@@ -74,67 +128,81 @@ fn record(l: &Lot, item: &Item, tree: &Tree) -> Record {
     r
 }
 
-const LOT_TABLE: &[&str] =
-    &["id", "item", "qty", "unit", "status", "acquired_at", "expires_at", "best_by", "frozen_at", "location"];
+const LOT_TABLE: &[&str] = &[
+    "id",
+    "item",
+    "qty",
+    "unit",
+    "status",
+    "acquired_at",
+    "expires_at",
+    "expiry_basis",
+    "storage",
+    "location",
+    "presumed_used_up",
+];
+
+/// "expires 2026-01-04 (fridge 3 days from 2026-01-01 (acquired))".
+fn expiry_note(est: &ItemEst, lot: &str) -> String {
+    est.lot(lot)
+        .and_then(|e| e.expiry.as_ref())
+        .map(|x| format!(", expires {} ({})", x.date, x.why))
+        .unwrap_or_default()
+}
 
 fn add(ctx: &Ctx, item: &str, qty: &str, at: Option<&str>, dates: &LotFlags) -> Result<()> {
     let db = ctx.db()?;
     let fmts = ctx.input_date_formats();
     let p = Parse { tz: &ctx.tz, date_formats: &fmts };
     let item = store::resolve_item(&db, item)?;
-    let catalog = crate::presets::Catalog::load(&ctx.resolved.config_path)?;
-    let preset = item.kind_preset.as_deref().and_then(|n| {
-        let p = catalog.get(n);
-        if p.is_none() {
-            ctx.warn(&format!("warning: unknown preset '{n}' on {}: no dates filled", item.name));
-        }
-        p
-    });
+    let cfg = Config::load(ctx)?;
     let mut tree = Tree::load(&db)?;
-    let mut filled = None;
+    let est = Estimator::load(&cfg, &db, ctx.tz.today())?;
+    if dates.best_by.as_deref().is_some_and(|b| !b.trim().is_empty()) {
+        check_best_by(
+            &item,
+            &ItemEst { class: est.class(&item, true), ..Default::default() },
+            dates.best_by.as_deref(),
+        )?;
+    }
     let lot = db.transaction(|db| {
         let loc = at.map(|a| tree.resolve_or_create(db, a).map(|r| r.0)).transpose()?;
-        let mut lot =
+        let lot =
             new_lot(&item.id, parse_qty(qty)?, dates, loc.filter(|l| Some(*l) != item.location_id), &p, &today(ctx))?;
-        if let Some(pr) = preset {
-            let storage = tree.opt_path(loc.or(item.location_id)).and_then(|p| crate::presets::Storage::from_path(&p));
-            filled = pr.fill_lot(&mut lot, storage);
-        }
         store::insert_lot(db, &lot)?;
         store::sync_lot_quantity(db, &item.id)?;
-        store::add_event(
-            db,
-            &item.id,
-            "lot_added",
-            json!({"lot": lot.id, "qty": lot.qty, "expires_at": lot.expires_at, "best_by": lot.best_by}),
-        )?;
+        store::add_event(db, &item.id, "lot_added", json!({"lot": lot.id, "qty": lot.qty, "best_by": lot.best_by}))?;
         Ok(lot)
     })?;
+    let est = estimate(ctx, &db, &item)?;
     ctx.info(&format!(
         "added a lot of {} ({} {}{})",
         item.name,
         fmt_qty(lot.qty),
         item.unit.as_deref().unwrap_or("ea"),
-        lot.due().map(|d| format!(", due {d}")).unwrap_or_default()
+        expiry_note(&est, &lot.id)
     ));
-    if let (Some(f), Some(pr)) = (&filled, preset) {
-        ctx.info(&format!("{}: {} {} ({})", pr.name, crate::commands::items::fill_label(f.field), f.date, f.why));
-    }
-    ctx.emit_mutation(&Report::object("lot", record(&lot, &item, &tree)))
+    ctx.emit_mutation(&Report::object("lot", record(&lot, &item, &est, &tree)))
 }
 
 fn ls(ctx: &Ctx, item: Option<&str>, all: bool) -> Result<()> {
     let db = ctx.db()?;
-    let tree = Tree::load(&db)?;
     let items = store::all_items(&db)?;
+    let lots = store::all_lots(&db)?;
+    let cfg = Config::load(ctx)?;
+    let e = Estimator::load(&cfg, &db, ctx.tz.today())?;
+    let est = e.all(&items, &lots);
     let only = item.map(|i| store::resolve_item(&db, i)).transpose()?;
-    let rows = store::all_lots(&db)?
+    let rows = lots
         .iter()
         .filter(|l| all || l.is_active())
         .filter(|l| only.as_ref().is_none_or(|i| i.id == l.item_id))
-        .filter_map(|l| items.iter().find(|i| i.id == l.item_id).map(|i| record(l, i, &tree)))
+        .filter_map(|l| {
+            let i = items.iter().find(|i| i.id == l.item_id)?;
+            Some(record(l, i, est.get(&i.id)?, &e.tree))
+        })
         .collect();
-    ctx.emit(&Report::list("lots", rows).table_columns(LOT_TABLE))
+    ctx.emit(&Report::list("lots", rows).table_columns(LOT_TABLE).dates(&["acquired_at", "expires_at"]))
 }
 
 fn edit(ctx: &Ctx, lot: &str, qty: Option<&str>, at: Option<&str>, status: Option<&str>, d: &LotFlags) -> Result<()> {
@@ -157,22 +225,31 @@ fn edit(ctx: &Ctx, lot: &str, qty: Option<&str>, at: Option<&str>, status: Optio
     };
     set(&mut l.acquired_at, &d.acquired)?;
     set(&mut l.opened_at, &d.opened)?;
-    set(&mut l.expires_at, &d.expires)?;
     set(&mut l.best_by, &d.best_by)?;
     set(&mut l.frozen_at, &d.frozen)?;
     if d.opened.is_some() && l.status == "sealed" {
         l.status = "open".into();
     }
+    if l.best_by.is_some() && d.best_by.is_some() {
+        check_best_by(&item, &estimate(ctx, &db, &item)?, l.best_by.as_deref())?;
+    }
     let mut tree = Tree::load(&db)?;
+    let day = today(ctx);
     db.transaction(|db| {
         if let Some(a) = at {
+            let before = Storage::of_location(&tree, l.location_id.or(item.location_id));
             l.location_id = Some(tree.resolve_or_create(db, a)?.0).filter(|x| Some(*x) != item.location_id);
+            let after = Storage::of_location(&tree, l.location_id.or(item.location_id));
+            if d.frozen.is_none() {
+                restorage(&mut l, before, after, &day);
+            }
         }
         store::update_lot(db, &l)?;
         store::sync_lot_quantity(db, &item.id).map(|_| ())
     })?;
-    ctx.info(&format!("updated lot {}", l.id));
-    ctx.emit_mutation(&Report::object("lot", record(&l, &item, &tree)))
+    let est = estimate(ctx, &db, &item)?;
+    ctx.info(&format!("updated lot {}{}", l.id, expiry_note(&est, &l.id)));
+    ctx.emit_mutation(&Report::object("lot", record(&l, &item, &est, &tree)))
 }
 
 fn rm(ctx: &Ctx, lot: &str) -> Result<()> {
@@ -253,6 +330,12 @@ fn consume_inner(ctx: &Ctx, r: Request) -> Result<()> {
     let at = crate::util::parse_when(r.on.unwrap_or("now"), &[], &ctx.tz)?;
     let all = store::lots_for(&db, &item.id)?;
     let mut lots: Vec<Lot> = all.iter().filter(|l| l.is_active() && l.qty > 0.0).cloned().collect();
+    if !r.whole_lot && !all.is_empty() {
+        // use/eat draw from lots still presumed on hand first (FIFO), then
+        // from lots presumed used up; toss takes the oldest (likely expired).
+        let est = estimate(ctx, &db, &item)?;
+        lots.sort_by_key(|l| !est.counts(l));
+    }
     if let Some(spec) = r.lot {
         let want = store::resolve_lot(&db, spec)?;
         if want.item_id != item.id {
@@ -348,31 +431,114 @@ pub fn toss(ctx: &Ctx, a: TossArgs) -> Result<()> {
     )
 }
 
+/// `lot confirm`: what is on hand today. Every active lot (or `--lot`)
+/// gets `confirmed_at` = today; with `--qty N` the oldest lots are drawn
+/// down (reason `used`, note `lot confirm`) so that N remains.
+fn confirm(ctx: &Ctx, item: &str, qty: Option<&str>, lot: Option<&str>) -> Result<()> {
+    let db = ctx.db()?;
+    let item = store::resolve_item(&db, item)?;
+    let mut lots: Vec<Lot> =
+        store::lots_for(&db, &item.id)?.into_iter().filter(|l| l.is_active() && l.qty > 0.0).collect();
+    if let Some(spec) = lot {
+        let want = store::resolve_lot(&db, spec)?;
+        if want.item_id != item.id {
+            return Err(AppError::invalid(format!("lot {} belongs to another item", want.id)));
+        }
+        lots.retain(|l| l.id == want.id);
+    }
+    if lots.is_empty() {
+        return Err(AppError::invalid(format!(
+            "{} has no active lots to confirm (add one with `wherebox lot add`)",
+            item.name
+        )));
+    }
+    let logged = round(lots.iter().map(|l| l.qty).sum());
+    let keep = qty.map(parse_qty).transpose()?;
+    if let Some(k) = keep {
+        if k < 0.0 || round(k) > logged {
+            return Err(AppError::invalid(format!(
+                "{} {} logged; to have more, add a lot (`wherebox lot add {} <qty>`)",
+                fmt_qty(logged),
+                item.unit.as_deref().unwrap_or("ea"),
+                item.name
+            )));
+        }
+    }
+    let day = today(ctx);
+    let at = crate::util::parse_when("now", &[], &ctx.tz)?;
+    db.transaction(|db| {
+        if let Some(k) = keep.filter(|k| round(logged - k) > 0.0) {
+            take_fifo(db, &lots, round(logged - k), "used", &at, Some("lot confirm"))?;
+        }
+        for l in &lots {
+            if let Some(mut cur) = store::get_lot(db, &l.id)? {
+                if cur.is_active() {
+                    cur.confirmed_at = Some(day.clone());
+                    store::update_lot(db, &cur)?;
+                }
+            }
+        }
+        store::sync_lot_quantity(db, &item.id)?;
+        store::add_event(
+            db,
+            &item.id,
+            "confirmed",
+            json!({"qty": keep, "lots": lots.iter().map(|l| &l.id).collect::<Vec<_>>(), "on": day}),
+        )
+    })?;
+    let est = estimate(ctx, &db, &item)?;
+    ctx.info(&format!(
+        "{}: {} {} on hand ({})",
+        item.name,
+        est.on_hand_text(),
+        item.unit.as_deref().unwrap_or("ea"),
+        est.basis
+    ));
+    let tree = Tree::load(&db)?;
+    let rows = store::lots_for(&db, &item.id)?
+        .iter()
+        .filter(|l| l.is_active())
+        .map(|l| record(l, &item, &est, &tree))
+        .collect();
+    ctx.emit_mutation(
+        &Report::list("lots", rows)
+            .table_columns(LOT_TABLE)
+            .meta("on_hand", json!(est.on_hand))
+            .meta("on_hand_basis", json!(est.basis)),
+    )
+}
+
 pub fn expiring(ctx: &Ctx, a: ExpiringArgs) -> Result<()> {
     let db = ctx.db()?;
     let within = a.within.as_deref().unwrap_or(ctx.expiring_within());
     let days = parse_duration_days(within)?.round() as i64;
     let today = ctx.tz.today();
-    let tree = Tree::load(&db)?;
-    let under = a.at.as_deref().map(|p| tree.resolve(p)).transpose()?.map(|id| tree.subtree(id));
     let items = store::all_items(&db)?;
-    // A preset's alert lead time widens the window for its items (medicine
-    // 30 days, documents 90), unless --within was given explicitly.
-    let catalog = crate::presets::Catalog::load(&ctx.resolved.config_path)?;
+    let lots = store::all_lots(&db)?;
+    let cfg = Config::load(ctx)?;
+    let e = Estimator::load(&cfg, &db, today)?;
+    let est = e.all(&items, &lots);
+    let tree = &e.tree;
+    let under = a.at.as_deref().map(|p| tree.resolve(p)).transpose()?.map(|id| tree.subtree(id));
+    // A preset's alert lead time widens the window for its items, unless
+    // --within was given explicitly.
     let lead = |i: &Item| {
-        let alert = i.kind_preset.as_deref().and_then(|n| catalog.get(n)).and_then(|p| p.alert_days);
+        let alert = i.kind_preset.as_deref().and_then(|n| cfg.catalog.get(n)).and_then(|p| p.alert_days);
         match (a.within.is_some(), alert) {
             (false, Some(d)) => days.max(i64::from(d)),
             _ => days,
         }
     };
-    let mut rows: Vec<(String, Record)> = store::all_lots(&db)?
+    let mut rows: Vec<(String, Record)> = lots
         .iter()
         .filter(|l| l.is_active() && l.qty > 0.0)
         .filter_map(|l| {
             let item = items.iter().find(|i| i.id == l.item_id && !i.is_gone())?;
-            let due = l.due()?;
-            let left = crate::util::days_until(due, today)?;
+            let ie = est.get(&item.id)?;
+            let le = ie.lot(&l.id)?;
+            let x = le.expiry.as_ref()?;
+            let due = x.date.to_string();
+            let left = (x.date - today).num_days();
             let loc = l.location_id.or(item.location_id);
             if left > lead(item) || under.as_ref().is_some_and(|u| loc.is_none_or(|x| !u.contains(&x))) {
                 return None;
@@ -384,7 +550,11 @@ pub fn expiring(ctx: &Ctx, a: ExpiringArgs) -> Result<()> {
                 "qty": l.qty,
                 "unit": item.unit.as_deref().unwrap_or("ea"),
                 "due": due,
-                "date_kind": if l.expires_at.is_some() { "expires" } else { "best_by" },
+                "expires_at": due,
+                "expiry_basis": x.basis,
+                "why": x.why,
+                "shelf_life": ie.class.as_ref().map(|c| c.name.clone()),
+                "storage": le.storage.as_str(),
                 "days_left": left,
                 "state": if left < 0 { "expired" } else { "soon" },
                 "frozen_at": l.frozen_at,
@@ -399,8 +569,8 @@ pub fn expiring(ctx: &Ctx, a: ExpiringArgs) -> Result<()> {
     }
     ctx.emit(
         &Report::list("expiring", rows.into_iter().map(|r| r.1).collect())
-            .table_columns(&["due", "days_left", "state", "item", "qty", "unit", "location", "frozen_at"])
-            .dates(&["due", "frozen_at"])
+            .table_columns(&["due", "days_left", "state", "item", "qty", "unit", "storage", "location", "expiry_basis"])
+            .dates(&["due", "expires_at", "frozen_at"])
             .meta("within_days", json!(days)),
     )
 }

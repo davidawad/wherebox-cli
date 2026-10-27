@@ -92,8 +92,18 @@ fn on_list_db<T>(
     }
 }
 
+/// A profile's inventory with estimated on hand (see [`crate::onhand`]).
 fn inventory(ctx: &Ctx, p: Option<&Profile>, db: &Db) -> Result<Inventory> {
-    Inventory::load(db, p.map(|p| p.name.clone()), ctx.tz.today())
+    let mut inv = Inventory::load(db, p.map(|p| p.name.clone()), ctx.tz.today())?;
+    let cfg = crate::onhand::Config::load(ctx)?;
+    let e = crate::onhand::Estimator::load(&cfg, db, inv.today)?;
+    inv.est = inv.items.iter().zip(&inv.lots).map(|(i, l)| e.item(i, l)).collect();
+    Ok(inv)
+}
+
+/// `2`, or `~2` when it rests on an estimate.
+fn have_text(q: f64, estimated: bool) -> String {
+    format!("{}{}", if estimated { "~" } else { "" }, fmt_qty(round(q)))
 }
 
 fn resolve_entry(ctx: &Ctx, e: &Entry) -> Result<Resolved> {
@@ -489,6 +499,7 @@ fn match_json(m: &lists::Match, c: &lists::Contribution) -> Value {
         "via": m.hit.via,
         "qty": c.qty,
         "on_hand": c.raw,
+        "on_hand_basis": if c.estimated { "estimated" } else { "logged" },
         "item_unit": c.unit,
         "lent": c.lent,
         "expired": c.expired,
@@ -516,7 +527,7 @@ fn check_rows(list: &ListFile, p: Option<&Profile>, checks: &[EntryCheck]) -> Ve
                 .join("; ");
             let status = match (list.is_wishlist(), c.status) {
                 (true, Status::Fulfilled) => "fulfilled (already own)".to_string(),
-                (_, Status::Short) => format!("short (have {} of {})", fmt_qty(round(c.have)), fmt_qty(c.want)),
+                (_, Status::Short) => format!("short (have {} of {})", have_text(c.have, c.estimated), fmt_qty(c.want)),
                 (_, s) => s.as_str().to_string(),
             };
             let mut status = status;
@@ -533,6 +544,7 @@ fn check_rows(list: &ListFile, p: Option<&Profile>, checks: &[EntryCheck]) -> Ve
                 "want": c.want,
                 "unit": c.unit,
                 "have": round(c.have),
+                "on_hand_basis": if c.estimated { "estimated" } else { "logged" },
                 "expired": round(c.expired),
                 "state": c.status.as_str(),
                 "status": status,
@@ -571,6 +583,15 @@ fn check(ctx: &Ctx, spec: &str, all: bool, th: Option<&str>) -> Result<ExitStatu
     }
     let ready = any_ready || list.is_wishlist();
     let verdict = lines.join("\n");
+    if !(ctx.out.format.is_envelope() || ctx.out.format == Format::Jsonl) {
+        // Text output marks a have count that rests on an estimate: `~2`.
+        for r in &mut rows {
+            if r.get("on_hand_basis").and_then(Value::as_str) == Some("estimated") {
+                let q = r.get("have").and_then(Value::as_f64).unwrap_or_default();
+                r.insert("have".into(), json!(have_text(q, true)));
+            }
+        }
+    }
     let mut cols = vec!["n", "entry", "want", "unit", "have", "status", "matched"];
     if all {
         cols.insert(0, "profile");
@@ -1003,6 +1024,7 @@ pub fn match_cmd(ctx: &Ctx, a: MatchArgs) -> Result<()> {
                     "score": mt.hit.score,
                     "via": mt.hit.via,
                     "on_hand": c.raw,
+                    "on_hand_basis": if c.estimated { "estimated" } else { "logged" },
                     "unit": c.unit,
                     "expired": c.expired,
                     "location": inv.item_path(i),

@@ -18,7 +18,7 @@ use crate::util::now_iso;
 pub const STATUSES: &[&str] = &["owned", "lent", "stored", "disposed", "sold", "lost", "gifted"];
 /// Statuses that mean the item is gone (hidden from `ls` by default).
 pub const GONE: &[&str] = &["disposed", "sold", "lost", "gifted"];
-pub const LOCATION_KINDS: &[&str] = &["property", "room", "container", "shelf"];
+pub const LOCATION_KINDS: &[&str] = &["property", "room", "container", "shelf", "fridge", "freezer", "pantry"];
 pub const ATTACHMENT_KINDS: &[&str] = &["photo", "receipt", "manual", "warranty", "other"];
 pub const LOT_STATUSES: &[&str] = &["sealed", "open", "consumed", "discarded"];
 pub const CONSUMPTION_REASONS: &[&str] = &["eaten", "used", "spoiled", "discarded"];
@@ -332,6 +332,8 @@ pub struct Item {
     pub reorder_qty: Option<f64>,
     pub preferred_vendor: Option<String>,
     pub product_ref: Option<String>,
+    /// Shelf-life type (`none` = never perishable; unset = classify by name).
+    pub shelf_life: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -373,8 +375,8 @@ const ITEM_COLS: &str = "id, import_ref, asset_id, name, description, quantity, 
     manufacturer, model_number, serial_number, purchase_from, purchase_price, purchase_time, insured, \
     lifetime_warranty, warranty_expires, warranty_details, sold_to, sold_time, sold_price, sold_notes, notes, \
     owner_entity, replacement_value, valued_at, status, kind_preset, unit, par_level, reorder_qty, \
-    preferred_vendor, product_ref, created_at, updated_at";
-const ITEM_NCOLS: usize = 35;
+    preferred_vendor, product_ref, created_at, updated_at, shelf_life";
+const ITEM_NCOLS: usize = 36;
 
 fn item_from(r: &Row) -> Item {
     Item {
@@ -413,6 +415,7 @@ fn item_from(r: &Row) -> Item {
         product_ref: r.s(32),
         created_at: r.s(33).unwrap_or_default(),
         updated_at: r.s(34).unwrap_or_default(),
+        shelf_life: r.s(35),
     }
 }
 
@@ -453,6 +456,7 @@ fn item_params(i: &Item) -> Vec<Value> {
         opt_text(i.product_ref.as_ref()),
         text(&i.created_at),
         text(&i.updated_at),
+        opt_text(i.shelf_life.as_ref()),
     ]
 }
 
@@ -819,9 +823,13 @@ pub struct Lot {
     pub qty: f64,
     pub acquired_at: Option<String>,
     pub opened_at: Option<String>,
-    pub expires_at: Option<String>,
+    /// A printed best-by date (perishables only); overrides the computed expiry.
     pub best_by: Option<String>,
     pub frozen_at: Option<String>,
+    /// Taken out of a freezer.
+    pub thawed_at: Option<String>,
+    /// Last `lot confirm`: still on hand that day.
+    pub confirmed_at: Option<String>,
     pub location_id: Option<i64>,
     pub status: String,
     pub created_at: String,
@@ -836,22 +844,18 @@ impl Lot {
         matches!(self.status.as_str(), "sealed" | "open")
     }
 
-    /// The date the lot should be used by: `expires_at`, else `best_by`.
-    pub fn due(&self) -> Option<&str> {
-        self.expires_at.as_deref().or(self.best_by.as_deref())
-    }
-
     /// Consumption order: oldest first (acquired date, then the earliest
-    /// due date, then creation order). Undated lots go last.
+    /// printed best-by date, then creation order). Undated lots go last.
     pub fn fifo_key(&self) -> (String, String, String) {
         let last = || "9999-99-99".to_string();
-        (self.acquired_at.clone().unwrap_or_else(last), self.due().map_or_else(last, str::to_string), self.id.clone())
+        (self.acquired_at.clone().unwrap_or_else(last), self.best_by.clone().unwrap_or_else(last), self.id.clone())
     }
 }
 
-const LOT_COLS: &str =
-    "id, item_id, qty, acquired_at, opened_at, expires_at, best_by, frozen_at, location_id, status, \
-    created_at, unit_price, source_ref";
+/// `expires_at` stays in the table (always empty since schema v3): expiry is computed.
+const LOT_COLS: &str = "id, item_id, qty, acquired_at, opened_at, best_by, frozen_at, location_id, status, \
+    created_at, unit_price, source_ref, thawed_at, confirmed_at";
+const LOT_NCOLS: usize = 14;
 
 fn lot_from(r: &Row) -> Lot {
     Lot {
@@ -860,14 +864,15 @@ fn lot_from(r: &Row) -> Lot {
         qty: r.f(2).unwrap_or_default(),
         acquired_at: r.s(3),
         opened_at: r.s(4),
-        expires_at: r.s(5),
-        best_by: r.s(6),
-        frozen_at: r.s(7),
-        location_id: r.i(8),
-        status: r.s(9).unwrap_or_else(|| "sealed".into()),
-        created_at: r.s(10).unwrap_or_default(),
-        unit_price: r.i(11),
-        source_ref: r.s(12),
+        best_by: r.s(5),
+        frozen_at: r.s(6),
+        location_id: r.i(7),
+        status: r.s(8).unwrap_or_else(|| "sealed".into()),
+        created_at: r.s(9).unwrap_or_default(),
+        unit_price: r.i(10),
+        source_ref: r.s(11),
+        thawed_at: r.s(12),
+        confirmed_at: r.s(13),
     }
 }
 
@@ -878,7 +883,6 @@ fn lot_params(l: &Lot) -> Vec<Value> {
         real(l.qty),
         opt_text(l.acquired_at.as_ref()),
         opt_text(l.opened_at.as_ref()),
-        opt_text(l.expires_at.as_ref()),
         opt_text(l.best_by.as_ref()),
         opt_text(l.frozen_at.as_ref()),
         opt_int(l.location_id),
@@ -886,12 +890,14 @@ fn lot_params(l: &Lot) -> Vec<Value> {
         text(&l.created_at),
         opt_int(l.unit_price),
         opt_text(l.source_ref.as_ref()),
+        opt_text(l.thawed_at.as_ref()),
+        opt_text(l.confirmed_at.as_ref()),
     ]
 }
 
 pub fn insert_lot(db: &Db, l: &Lot) -> Result<()> {
     check_choice("lot status", &l.status, LOT_STATUSES)?;
-    db.execute(&format!("INSERT INTO lots ({LOT_COLS}) VALUES ({})", placeholders(13)), &lot_params(l))
+    db.execute(&format!("INSERT INTO lots ({LOT_COLS}) VALUES ({})", placeholders(LOT_NCOLS)), &lot_params(l))
         .map_err(|e| unique_err(e, || format!("lot '{}' or source ref already exists", l.id)))
         .map(|_| ())
 }
@@ -985,6 +991,20 @@ pub fn insert_consumption(db: &Db, lot_id: &str, qty: f64, at: &str, reason: &st
         &[text(lot_id), real(qty), text(at), text(reason), opt_text(note)],
     )
     .map(|_| ())
+}
+
+/// The day of each lot's latest logged consumption (`use`/`eat`/`toss`).
+pub fn last_use_by_lot(db: &Db) -> Result<HashMap<String, String>> {
+    let mut out: HashMap<String, String> = HashMap::new();
+    for r in db.query("SELECT lot_id, at FROM consumption", &[])? {
+        let (Some(lot), Some(at)) = (r.s(0), r.s(1)) else { continue };
+        let day = at.get(..10).unwrap_or(&at).to_string();
+        let e = out.entry(lot).or_default();
+        if *e < day {
+            *e = day;
+        }
+    }
+    Ok(out)
 }
 
 pub fn consumption_for(db: &Db, item_id: &str) -> Result<Vec<Consumption>> {
@@ -1128,7 +1148,7 @@ mod tests {
         let lot = |id: &str, acq: Option<&str>, exp: Option<&str>| Lot {
             id: id.into(),
             acquired_at: acq.map(str::to_string),
-            expires_at: exp.map(str::to_string),
+            best_by: exp.map(str::to_string),
             ..Default::default()
         };
         let mut v = [

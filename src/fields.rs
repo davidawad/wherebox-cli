@@ -68,6 +68,7 @@ pub const FIELDS: &[Field] = &[
     f("reorder_qty", "HB.field.Reorder Qty", Kind::Real),
     f("preferred_vendor", "HB.field.Vendor", Kind::Text),
     f("product_ref", "HB.field.Product Ref", Kind::Text),
+    f("shelf_life", "HB.field.Shelf Life", Kind::Text),
 ];
 
 /// Number of documented Homebox standard columns at the start of [`FIELDS`].
@@ -118,6 +119,7 @@ pub fn get(i: &Item, key: &str) -> Option<String> {
         "reorder_qty" => r(i.reorder_qty),
         "preferred_vendor" => s(&i.preferred_vendor),
         "product_ref" => s(&i.product_ref),
+        "shelf_life" => s(&i.shelf_life),
         _ => None,
     }
 }
@@ -199,6 +201,7 @@ pub fn set(i: &mut Item, key: &str, value: Option<&str>, p: &Parse) -> Result<()
         "reorder_qty" => i.reorder_qty = real()?,
         "preferred_vendor" => i.preferred_vendor = text(),
         "product_ref" => i.product_ref = text(),
+        "shelf_life" => i.shelf_life = v.map(|t| t.to_ascii_lowercase()),
         other => return Err(AppError::usage(format!("unknown item field '{other}'"))),
     }
     Ok(())

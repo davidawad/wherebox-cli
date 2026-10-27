@@ -1,5 +1,5 @@
-//! Kind presets: `preset ls|show`, and dates filled by `add --preset` and
-//! `lot add` (fridge vs freezer by location name).
+//! Kind presets: `preset ls|show`, the shelf-life type a food preset names,
+//! and the expiry computed from it by storage (fridge vs freezer).
 
 mod support;
 
@@ -15,30 +15,34 @@ fn ls_and_show() {
     let v = e.json(&["preset", "ls"]);
     assert!(rows(&v).len() >= 39);
     assert_eq!(row(&v, "name", "meat.raw")["category"], "food");
-    assert_eq!(row(&v, "name", "meat.raw")["shelf_life"], "fridge 3-5 days, freezer 4-12 months");
+    assert_eq!(row(&v, "name", "meat.raw")["shelf_life_type"], "raw-beef");
+    assert_eq!(row(&v, "name", "pantry")["shelf_life_type"], serde_json::Value::Null);
     let s = e.json(&["preset", "show", "smoke-detector"]);
     assert_eq!(s["data"]["intervals"]["replace"], "10y");
     assert_eq!(
         s["data"]["sources"][0]["url"],
         "https://www.nfpa.org/education-and-research/home-fire-safety/smoke-alarms"
     );
-    let m = e.json(&["preset", "show", "poultry.raw"]);
-    assert!(m["data"]["sources"][0]["cite"].as_str().unwrap().contains("FoodKeeper"));
-    let table = e.run(&["preset", "show", "meat.raw"]);
-    assert!(table.contains("FoodKeeper") && table.contains("use-by"), "{table}");
+    let table = e.run(&["preset", "show", "poultry.raw"]);
+    assert!(table.contains("raw-chicken") && table.contains("shelf-life show"), "{table}");
     let err = e.fail(&["preset", "show", "nope"], 3);
     assert!(err.contains("preset ls"), "{err}");
 }
 
 #[test]
-fn add_and_lot_add_fill_dates_by_storage() {
+fn preset_types_give_computed_expiry_by_storage() {
     let e = Env::pinned(); // today = 2026-01-01
     e.run(&["add", "Ribeye", "--preset", "meat.raw", "--at", "Rental apartment / Kitchen / Fridge"]);
     let v = lots(&e, "Ribeye");
-    assert_eq!(rows(&v).len(), 1, "a preset with a shelf life starts a lot");
-    assert_eq!(rows(&v)[0]["expires_at"], "2026-01-04", "fridge: 3 days");
-    assert_eq!(rows(&v)[0]["frozen_at"], serde_json::Value::Null);
+    assert_eq!(rows(&v).len(), 1, "a preset with a shelf-life type starts a lot");
+    let l = &rows(&v)[0];
+    assert_eq!(
+        (&l["expires_at"], &l["expiry_basis"], &l["storage"]),
+        (&"2026-01-04".into(), &"computed".into(), &"fridge".into())
+    );
+    assert_eq!(l["shelf_life"], "raw-beef");
 
+    // a name the types know beats the preset's default type
     e.run(&[
         "add",
         "Chicken thighs",
@@ -47,30 +51,20 @@ fn add_and_lot_add_fill_dates_by_storage() {
         "--at",
         "Rental apartment / Kitchen / Fridge / Freezer drawer",
     ]);
-    let v = lots(&e, "Chicken thighs");
-    assert_eq!(rows(&v)[0]["expires_at"], "2026-10-01", "freezer: 9 months");
-    assert_eq!(rows(&v)[0]["frozen_at"], "2026-01-01");
+    let v = e.json(&["show", "Chicken thighs"]);
+    assert_eq!((&v["data"]["shelf_life"], &v["data"]["shelf_life_basis"]), (&"raw-chicken".into(), &"name".into()));
+    assert_eq!(rows(&lots(&e, "Chicken thighs"))[0]["expires_at"], "2026-10-01", "freezer: 9 months");
 
     // lot add: the lot's location decides
-    e.run(&[
-        "lot",
-        "add",
-        "Ribeye",
-        "2",
-        "--at",
-        "Rental apartment / Garage / Chest Freezer",
-        "--acquired",
-        "2026-01-01",
-    ]);
+    e.run(&["lot", "add", "Ribeye", "2", "--at", "Rental apartment / Garage / Chest Freezer"]);
     let v = lots(&e, "Ribeye");
-    let frozen = rows(&v).iter().find(|l| l["frozen_at"] == "2026-01-01").expect("frozen lot");
+    let frozen = rows(&v).iter().find(|l| l["storage"] == "freezer").expect("frozen lot").clone();
     assert_eq!(frozen["expires_at"], "2026-05-01", "freezer: 4 months");
-    // explicit dates win
-    e.run(&["lot", "add", "Ribeye", "1", "--expires", "2026-01-02"]);
-    assert!(rows(&lots(&e, "Ribeye")).iter().any(|l| l["expires_at"] == "2026-01-02"));
-    // best-by presets
-    e.run(&["add", "Sourdough", "--preset", "bread", "--at", "Rental apartment / Kitchen / Pantry"]);
-    assert_eq!(rows(&lots(&e, "Sourdough"))[0]["best_by"], "2026-01-15");
+    // a printed best-by wins
+    e.run(&["lot", "add", "Ribeye", "1", "--best-by", "2026-01-02"]);
+    assert!(rows(&lots(&e, "Ribeye"))
+        .iter()
+        .any(|l| l["expires_at"] == "2026-01-02" && l["expiry_basis"] == "printed"));
     // unknown preset
     let err = e.fail(&["add", "Thing", "--preset", "nope"], 3);
     assert!(err.contains("no preset 'nope'"), "{err}");
@@ -96,23 +90,11 @@ fn user_presets_override_builtins() {
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join("meat.raw.toml"),
-        "name = \"meat.raw\"\ndescription = \"house rule\"\ncategory = \"food\"\n[shelf_life]\ndate = \"use_by\"\nfridge = \"2d\"\n",
+        "name = \"meat.raw\"\ndescription = \"house rule\"\ncategory = \"food\"\nshelf_life_type = \"ground-meat\"\n",
     )
     .unwrap();
     let v = e.json(&["preset", "show", "meat.raw"]);
     assert!(v["data"]["origin"].as_str().unwrap().ends_with("meat.raw.toml"));
-    e.run(&["add", "Steak", "--preset", "meat.raw", "--at", "Fridge"]);
-    assert_eq!(rows(&lots(&e, "Steak"))[0]["expires_at"], "2026-01-03");
-}
-
-#[test]
-fn alert_days_widen_expiring() {
-    let e = Env::pinned();
-    e.run(&["add", "Ibuprofen", "--preset", "medicine", "--expires", "2026-01-20"]);
-    e.run(&["add", "Passport", "--preset", "document", "--expires", "2026-03-15"]);
-    let v = e.json(&["expiring"]);
-    let names: Vec<&str> = rows(&v).iter().map(|r| r["item"].as_str().unwrap()).collect();
-    assert_eq!(names, ["Ibuprofen", "Passport"], "30 and 90 day alerts beat the 7 day default");
-    let v = e.json(&["expiring", "--within", "7d"]);
-    assert!(rows(&v).is_empty(), "an explicit window wins");
+    e.run(&["add", "Tri-tip", "--preset", "meat.raw", "--at", "Fridge"]);
+    assert_eq!(rows(&lots(&e, "Tri-tip"))[0]["expires_at"], "2026-01-02", "ground meat: 1 day");
 }

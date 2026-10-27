@@ -70,6 +70,13 @@ pub const SETTINGS: &[Setting] = &[
         kind: Kind::Str,
     },
     Setting {
+        key: "default_cadence",
+        env: &["WHEREBOX_DEFAULT_CADENCE"],
+        help: "how long a non-perishable lot is presumed on hand without a learned reorder cadence or a [cadence] entry (e.g. 90d, 3m)",
+        choices: &[],
+        kind: Kind::Str,
+    },
+    Setting {
         key: "match_threshold",
         env: &["WHEREBOX_MATCH_THRESHOLD"],
         help: "fuzzy name-match threshold for lists, cohorts and `match` (0-1)",
@@ -195,6 +202,7 @@ fn default_value(key: &str) -> String {
         "csv_quote" => "\"".into(),
         "csv_header" => "true".into(),
         "expiring_within" => "7d".into(),
+        "default_cadence" => "90d".into(),
         "match_threshold" => "0.82".into(),
         "key_source" => "auto".into(),
         "quiet" | "verbose" => "false".into(),
@@ -237,7 +245,7 @@ pub fn normalize(key: &str, raw: &str) -> Result<String> {
             Ok(t) if (0.0..=1.0).contains(&t) => Ok(v.trim().to_string()),
             _ => Err(bad("expected a number from 0 to 1")),
         },
-        Kind::Str if s.key == "expiring_within" => {
+        Kind::Str if matches!(s.key, "expiring_within" | "default_cadence") => {
             crate::util::parse_duration_days(v).map(|_| v.to_string()).map_err(|e| bad(&e.message))
         }
         Kind::Str => Ok(v.to_string()),
@@ -321,12 +329,14 @@ fn toml_scalar(v: &toml::Value) -> Option<String> {
 /// `csv_delimiter = ";"`).
 /// The `[encryption]` section is wherebox's record of database keys
 /// ([`crate::enc_config`]); `[profiles.NAME]` tables describe property
-/// profiles ([`crate::profiles`]). Neither holds settings.
+/// profiles ([`crate::profiles`]); `[shelf_life.<type>]` tables are
+/// shelf-life types ([`crate::shelf_life`]) and `[cadence]` default reorder
+/// cadences ([`crate::onhand`]). None of them holds settings.
 pub fn parse_toml_layer(text: &str) -> Result<Layer> {
     let table: toml::Table = text.parse().map_err(|e| AppError::config(format!("TOML: {e}")))?;
     table
         .iter()
-        .filter(|(k, _)| !matches!(k.as_str(), "encryption" | "profiles"))
+        .filter(|(k, _)| !matches!(k.as_str(), "encryption" | "profiles" | "shelf_life" | "cadence"))
         .flat_map(|(k, v)| match v {
             toml::Value::Table(t) => t.iter().map(|(k2, v2)| (format!("{k}_{k2}"), v2.clone())).collect::<Vec<_>>(),
             other => vec![(k.clone(), other.clone())],
