@@ -845,52 +845,9 @@ pub mod dollars_opt {
 mod tests {
     use super::*;
 
-    pub const SPROUTS: &str = "\
-SPROUTS FARMERS MARKET
-Store #0417
-100 Example Blvd
-Anytown, AZ 85000
-(555) 010-0100
+    pub const SPROUTS: &str = include_str!("../tests/fixtures/receipts/sprouts.txt");
 
-ORG BANANAS
-  2.12 lb @ 0.99 /lb          2.10 F
-4046 AVOCADO HASS
-  3 @ 1.25                    3.75 F
-94011 ORG BANANAS             1.88 F
-GRK YGRT PLAIN 32OZ           5.49 F
-  DIGITAL COUPON             -1.00
-WLNT HALVES 16OZ              8.99 F
-VOID WLNT HALVES 16OZ         8.99
-BNLS SKNLS CHKN BRST
-  1.50 lb @ 6.99 /lb         10.49 F
-PAPER BAG                     0.10
-SUBTOTAL                     22.81
-TAX                           0.00
-TOTAL                        22.81
-VISA ************1234        22.81
-10/14/2026 5:42 PM
-";
-
-    pub const ALDI: &str = "\
-ALDI
-1234 Example Rd
-Springfield, IL 62700
-Store 101   10/20/26  09:15
-
-701234 HF WHL MILK GAL        3.15 FA
-2 @ 1.29
-702345 ORG BABY SPINACH       2.58 FA
-703456 LG BRWN EGGS 12CT      4.19 FA
-  INSTANT SAVINGS            -0.50
-  PRICE YOU PAY               3.69
-704567 SN ORG PNUT BTR        3.49 FA
-VOID 704567 SN ORG PNUT BTR   3.49
-705678 BANANAS 2LB BAG        1.39 FA
-BOTTLE DEPOSIT                0.10
-SUBTOTAL                     10.91
-SALES TAX                     0.00
-TOTAL                        10.91
-";
+    pub const ALDI: &str = include_str!("../tests/fixtures/receipts/aldi.txt");
 
     #[test]
     fn data_loads() {

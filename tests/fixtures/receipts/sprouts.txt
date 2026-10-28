@@ -1,0 +1,23 @@
+SPROUTS FARMERS MARKET
+Store #0417
+100 Example Blvd
+Anytown, AZ 85000
+(555) 010-0100
+
+ORG BANANAS
+  2.12 lb @ 0.99 /lb          2.10 F
+4046 AVOCADO HASS
+  3 @ 1.25                    3.75 F
+94011 ORG BANANAS             1.88 F
+GRK YGRT PLAIN 32OZ           5.49 F
+  DIGITAL COUPON             -1.00
+WLNT HALVES 16OZ              8.99 F
+VOID WLNT HALVES 16OZ         8.99
+BNLS SKNLS CHKN BRST
+  1.50 lb @ 6.99 /lb         10.49 F
+PAPER BAG                     0.10
+SUBTOTAL                     22.81
+TAX                           0.00
+TOTAL                        22.81
+VISA ************1234        22.81
+10/14/2026 5:42 PM

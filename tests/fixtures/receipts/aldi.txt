@@ -1,0 +1,18 @@
+ALDI
+1234 Example Rd
+Springfield, IL 62700
+Store 101   10/20/26  09:15
+
+701234 HF WHL MILK GAL        3.15 FA
+2 @ 1.29
+702345 ORG BABY SPINACH       2.58 FA
+703456 LG BRWN EGGS 12CT      4.19 FA
+  INSTANT SAVINGS            -0.50
+  PRICE YOU PAY               3.69
+704567 SN ORG PNUT BTR        3.49 FA
+VOID 704567 SN ORG PNUT BTR   3.49
+705678 BANANAS 2LB BAG        1.39 FA
+BOTTLE DEPOSIT                0.10
+SUBTOTAL                     10.91
+SALES TAX                     0.00
+TOTAL                        10.91
