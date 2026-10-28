@@ -847,7 +847,7 @@ profile's phrase is in the header.
 The chain comes from the header (a profile's `detect` phrase). The store is,
 in order: `--store S`; the one store of that chain in the database; among
 several, the one whose address (its first line, normalized) appears in the
-header; the profile's first store (`store use`) when it is of the chain;
+header; the first of the profile's stores (`store use`) that is of the chain;
 else, interactively, a pick from the chain's stores. Without a store (no
 store of the chain yet) the chain alone is kept: lots get the chain name as
 vendor and new store products are chain rows, and a note suggests `store
@@ -856,7 +856,10 @@ written.
 
 ### Matching lines to items
 
-Each item line (not fees, not voided) gets a proposal, first hit wins:
+Each item line (not fees, not voided) gets a proposal, first hit wins.
+Receipts often print the noun first (`AVOCADO HASS`, `ONION YELLOW`): when
+the expansion's head noun is not a food but its first word is, the first
+word is read last (`Hass Avocado`).
 
 1. **code** (confidence 1.0): a store product of the store (else its chain,
    else any) with the line's PLU, UPC or SKU (UPCs compare as GTINs); its
@@ -886,8 +889,9 @@ The review table shows, per line: `n`, the receipt `text`, parsed `qty`,
 - non-interactive without `--yes`, or `--review FILE`: nothing is imported;
   a review file (`<file stem>.review.json` in the current directory, or
   FILE) is written, to edit and apply with `receipt apply`.
-- `--dry-run`: parse, match, show the table and what would be written;
-  nothing is written (no review file either).
+- `--dry-run`: parse, match, show the table and what would be written
+  (lines below `--min-confidence` skipped, as with `--yes`); nothing is
+  written (no review file either).
 
 Review file (`wherebox/receipt-review/v1`):
 
