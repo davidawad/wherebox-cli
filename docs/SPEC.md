@@ -95,6 +95,7 @@ wherebox list new|ls|show|rm|add|edit|drop|check|shop|pin|unpin|explain|import  
 wherebox match <query> | cohort new|ls|show|add|rm
 wherebox store add|ls|show|edit|rm|layout|use   # see Stores and sourcing
 wherebox source add|ls|edit|rm
+wherebox receipt import|apply|ls|show   # see Receipts
 wherebox report insurance [--profile P | --all-profiles] [--owner O] [--min-value N] [--bought-after DATE] [--format csv|xlsx|pdf|html]
 wherebox db regroup-consumables [--dry-run]
 wherebox report warranties [--expiring 90d] [--all-profiles] [--include-expired]
@@ -176,7 +177,9 @@ is left unset and the preset's notes say why. Details: docs/presets.md.
   a checklist (`--checklist`, Markdown), or a cart-ready CSV (`-f csv`).
   `wherebox par <item> <n>` sets the par level.
 - Receipt intake (Amazon, Whole Foods, grocery emails) adds lots
-  automatically, so the inventory restocks itself when you buy.
+  automatically, so the inventory restocks itself when you buy. Grocery
+  receipts (photographed, PDF or emailed) go through `wherebox receipt
+  import`; see Receipts.
 
 ## Shelf life and on hand
 
@@ -747,6 +750,201 @@ creates or updates them (stores by id, chain layouts by chain, products by
 id when the id is free or the same product, else as new rows) in the same
 transaction as the items, `--dry-run` included. Lots export and import
 their `vendor`. Homebox CSV is unchanged (stores do not travel).
+
+## Receipts
+
+Grocery chains (Sprouts, ALDI and most others) are not on Amazon, so their
+purchases come from receipts: a paper receipt photographed, a PDF, or an
+emailed receipt saved as text. `wherebox receipt import` reads them into
+lots, with the store, the price paid and the purchase date. No network: OCR
+runs locally through FOSS command-line tools, never a cloud service.
+
+```
+wherebox receipt import <FILE>... [-P P] [--store S] [--date D] [--at LOC] [--dry-run] [--yes]
+    [--min-confidence 0.8] [--review FILE] [--force] [--keep-image] [--no-path]
+wherebox receipt apply <review.json> [--dry-run] [--force]
+wherebox receipt ls
+wherebox receipt show <receipt> [--text] [--extract-image FILE]
+```
+
+### Reading the file
+
+Each FILE is one receipt. By content (magic bytes), else extension:
+
+- **text** (`.txt`, `.eml`, anything that is UTF-8): read as is. An emailed
+  receipt is pasted or saved as text.
+- **PDF**: `pdftotext -layout FILE -` (poppler). When that yields no text (a
+  scanned PDF), the pages are rendered with `pdftoppm -r 300 -png` into a
+  temporary directory and each page goes through tesseract.
+- **image** (`png`, `jpg`/`jpeg`, `tif`/`tiff`, `bmp`, `gif`, `webp`,
+  `heic`/`heif` when the local tesseract/leptonica reads it): `tesseract FILE
+  stdout --psm 4` (one column of variable-size text, as receipts are).
+
+A missing tool is an error (exit 6) naming what to install: `brew install
+tesseract` / `apt install tesseract-ocr`, `brew install poppler` / `apt
+install poppler-utils`. OCR sits behind a small trait (`Ocr`: file -> text),
+so tests feed text and never need tesseract.
+
+### Parsing
+
+A generic line parser, tuned per chain by **chain profiles**, which are data
+(`data/receipts.toml`, embedded; no per-chain code branches). Amounts are
+`1.99`, `$1.99`, `-1.99`, `1.99-` or `(1.99)`; trailing tax flags (one or two
+letters such as `F`, `T`, `FA`, or `*`) after an amount are dropped. Line
+kinds:
+
+| kind | looks like | effect |
+|---|---|---|
+| header | lines before the first item | store name, address, phone; chain detection |
+| date / time | `10/14/2026`, `10/14/26`, `2026-10-14`, `14-10-2026`; `5:42 PM`, `17:42:05` | the purchase date and time (the first found); `date_order` (`mdy`, `dmy`) is per profile |
+| item | text, optional code, amount | one purchase line |
+| code | a code token at the start or end of the item text: 4 digits, or 5 starting with 8 or 9, is a **PLU**; 8, 12, 13 or 14 digits a **UPC**; other digit runs of the profile's `sku_digits` lengths a **SKU** | stored on the line and on the store product |
+| quantity | `2 @ 1.99`, `2 x 1.99`, `QTY 2 @ 1.99`, with or without the line total, alone or inside an item line | quantity and unit price of the item it belongs to |
+| weight | `1.12 lb @ 2.99 /lb`, `0.5 kg @ 4.00/kg`, `2.12LB @ $0.99/LB 2.10` | weight (lb, kg, oz) and price per unit of the item it belongs to |
+| discount | a negative amount, or a discount word (`coupon`, `discount`, `savings`, `instant savings`, `promo`, `mfr`, `member`, `off`, plus the profile's `discount_words`) | subtracted from the item above |
+| final price | the profile's `final_price_words` (ALDI-style `PRICE YOU PAY 2.49`) | sets the item above's total |
+| void | `void`, `voided`, `item void`, `cancel` with optional text and amount | cancels the latest item with the same code or text (and amount), else the item above; voided items are kept on the review as `voided` and never imported |
+| fee | `bag`, `bag fee`, `bottle deposit`, `deposit`, `crv`, `bag credit` (+ the profile's `fee_words`) | not a purchase: left out |
+| totals | `subtotal`, `tax`, `total`, `balance due`, `amount due` | subtotal, tax (summed), total; items stop at the first of these |
+| payment / info | `visa`, `cash`, `change`, `debit`, `items sold`, `you saved`... | ignored |
+
+A quantity or weight line belongs to the item above when that item has no
+amount, or its amount equals the line's total (within a cent) or the line
+has none; otherwise to the next item (some receipts print it first). A
+priceless text line followed by a quantity or weight line with a total is an
+item. The parse checks that the kept item totals add up to the subtotal (or
+total minus tax) and warns when they do not (an OCR misread).
+
+**Abbreviations.** Receipt-speak is expanded word by word from a table in
+the same data file (`org` organic, `bnls` boneless, `sknls` skinless, `grnd`
+ground, `chkn` chicken, `brst` breast, `whl` whole, `grk` greek, `ygrt`
+yogurt, `lg` large, `frz` frozen, `evoo` extra virgin olive oil...), plus
+the chain profile's own table. The receipt text is kept (`text`); the
+expansion (`name`, title case) is what matching sees. Size tokens (`16OZ`,
+`32 FL OZ`, `1LB`, `12CT`) become the line's `size`.
+
+**Chain profiles** (`[[chain]]` in `data/receipts.toml`):
+
+```toml
+[[chain]]
+name = "ALDI"                       # stored as the store's chain
+detect = ["aldi"]                   # header phrases (whole words, any case)
+sku_digits = [6]                    # short item codes are SKUs
+date_order = "mdy"
+final_price_words = ["price you pay"]
+discount_words = ["instant savings"]
+fee_words = []
+[chain.abbreviations]
+hf = "happy farms"
+```
+
+Sprouts (PLU codes on produce, weight lines) and ALDI (six-digit item codes,
+abbreviated names, `PRICE YOU PAY` lines) ship, plus `generic`, used when no
+profile's phrase is in the header.
+
+### The store
+
+The chain comes from the header (a profile's `detect` phrase). The store is,
+in order: `--store S`; the one store of that chain in the database; among
+several, the one whose address (its first line, normalized) appears in the
+header; the profile's first store (`store use`) when it is of the chain;
+else, interactively, a pick from the chain's stores. Without a store (no
+store of the chain yet) the chain alone is kept: lots get the chain name as
+vendor and new store products are chain rows, and a note suggests `store
+add`. No chain and no store: lots have no vendor and no store products are
+written.
+
+### Matching lines to items
+
+Each item line (not fees, not voided) gets a proposal, first hit wins:
+
+1. **code** (confidence 1.0): a store product of the store (else its chain,
+   else any) with the line's PLU, UPC or SKU (UPCs compare as GTINs); its
+   item, else the item named like its food, else a new item named for its
+   food.
+2. **product** (0.95 x score): a store product of the store or its chain
+   whose name (or food) fuzzily matches the expanded name at the match
+   threshold (see Fuzzy names).
+3. **food** (0.9 x head score): the expanded name's head noun names a food
+   (food lexicon, shelf-life type) and an existing consumable's name has that
+   head noun (head score >= 0.85, not as a compound: `Garlic Powder` is not
+   garlic).
+4. **item** (0.9 x score): an existing item's name fuzzily matches.
+5. **new**: a new item named from the expansion (`Organic Bananas`), its
+   shelf-life type guessed from its name (`banana`); confidence 0.8 when the
+   head noun names a food, else 0.4.
+
+The review table shows, per line: `n`, the receipt `text`, parsed `qty`,
+`unit`, `size`, `unit_price` and `total`, the proposal (`action` `add` or
+`new`, `item`, `tier`, `confidence`, `shelf_life`). Then:
+
+- `--yes`: every proposal at or above `--min-confidence` (default 0.8) is
+  accepted, the rest skipped (listed, with a hint to use a review file).
+- interactive (stdin is a terminal): per line `[a]ccept`, `[e]dit` (another
+  item by id, asset id or name, or a new name), `[n]ew`, `[s]kip`, `[A]ccept`
+  the rest, `[q]uit` (nothing written).
+- non-interactive without `--yes`, or `--review FILE`: nothing is imported;
+  a review file (`<file stem>.review.json` in the current directory, or
+  FILE) is written, to edit and apply with `receipt apply`.
+- `--dry-run`: parse, match, show the table and what would be written;
+  nothing is written (no review file either).
+
+Review file (`wherebox/receipt-review/v1`):
+
+```json
+{"schema": "wherebox/receipt-review/v1",
+ "receipt": {"fingerprint": "...", "file": "sprouts.txt", "chain": "Sprouts", "store": "sprouts-north",
+             "date": "2026-10-14", "time": "17:42", "subtotal": 12.34, "tax": 0.0, "total": 12.34,
+             "ocr_text": "..."},
+ "lines": [{"n": 6, "text": "ORG BANANAS", "name": "Organic Bananas", "code": "4011", "code_kind": "plu",
+            "qty": 2.12, "unit": "lb", "size": null, "unit_price": 0.99, "total": 2.1, "discount": 0.0,
+            "voided": false, "tier": "code", "confidence": 1.0,
+            "action": "add", "item": "01J...", "new_name": null, "shelf_life": "banana"}],
+ "skipped": [{"n": 14, "text": "PAPER BAG", "why": "fee"}]}
+```
+
+`action` is `add` (to `item`: id, asset id or name), `new` (an item named
+`new_name`, shelf-life type `shelf_life`) or `skip`; `qty` may be edited.
+`receipt apply` re-checks the fingerprint and applies exactly that.
+
+### Effects
+
+For each accepted line, in one transaction:
+
+- a **lot** on the item: quantity from the line (count or weight). When the
+  item's unit is a mass or volume and the line is a count, the matched store
+  product's size (else a size in the line) converts it (2 x `16 oz` = 32 oz);
+  a weight converts to the item's unit when it can (`lb` -> `g`); otherwise
+  the line's own quantity. `acquired_at` = the receipt date (`--date`
+  overrides; neither: today, with a warning), `unit_price` = the line total
+  / quantity (after discounts), `vendor` = the store id (else the chain),
+  `source_ref` = `receipt:<receipt id>:<line n>`.
+- a **new item** (action `new`): unit `lb`/`kg`/`oz` for weighed lines,
+  else `ea`; its `Shelf Life` field set to the guessed type; `--at LOC`
+  places it; source `receipt:<receipt id>`.
+- the **store product**: the matched one (or, with a store or chain known,
+  a new one for the item's food at the store, else as a chain row) gets the
+  price seen (per unit: per lb for weighed lines) and the receipt date, and
+  its PLU/UPC/SKU and item link when missing; a new one guesses its section.
+- fees, tax, voided and skipped lines add nothing.
+
+**Idempotent.** The receipt **fingerprint** is a SHA-256 over the store (else
+chain), date, time, total and every item line's code, text and total. A
+receipt whose fingerprint is already stored is refused (exit 4, naming the
+stored receipt); `--force` imports it again as a new receipt.
+
+### Receipts stored
+
+| Table | Columns |
+|---|---|
+| `receipts` | `id` (ULID), `fingerprint`, `store_id`, `chain`, `purchased_on` (date), `purchased_time`, `subtotal`, `tax`, `total` (cents), `lines` (accepted lines), `ocr_text` (always), `source_path` (the file as given; omitted with `--no-path`), `image_name`, `image` (base64 of the original file, only with `--keep-image`; inside the encrypted database), `created_at` |
+
+Its lots are the lots whose `source_ref` starts with `receipt:<id>:`. `receipt
+ls` lists receipts (date, store, total, lots); `receipt show` prints one with
+its lots (`--text` the OCR text, `--extract-image FILE` writes a kept image
+back out). `export -f json` carries a `receipts` array (every column, money
+in dollars) that `import` reads back (by id: created, or updated); lots keep
+their `source_ref`, so the link survives the round trip.
 
 ## Insurance report
 
