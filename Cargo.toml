@@ -1,6 +1,6 @@
 [package]
 name = "wherebox-cli"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Personal inventory tracking (what you own, where it is, what it is worth) on a local fsqlite database, Homebox-CSV compatible"
 license = "GPL-3.0-or-later"
