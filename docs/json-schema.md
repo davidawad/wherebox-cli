@@ -70,8 +70,8 @@ the same objects as JSON. A single-object result prints as one line.
 | `lot confirm` | `confirmed` | `{item, item_id, confirmed_on, qty, unit}` + the item's `shelf_life`, `shelf_life_basis`, `on_hand`, `on_hand_basis`, `expires_at`, `expiry_basis` |
 | `expiring` | `expiring` | array of `{item, asset_id, lot, qty, unit, due, expires_at, expiry_basis, expiry_detail, shelf_life, days_left, state, on_hand_basis, used_up, storage, frozen_at, location}` (perishables only; `due` = `expires_at`, computed); meta `within_days` |
 | `shelf-life ls` / `show` / `set` / `unset` | `shelf_life` | `{name, group, pantry, fridge, freezer, opened, origin, days: {pantry, fridge, freezer, opened}}` (durations as text such as `7 days`; `days` numeric; `show` adds `synonyms`, `summary`, `items`) |
-| `export -f json\|jsonl\|yaml\|toon` | `export` | array of Item + `lots` (all lots, any status); meta `profile`; json/yaml/toon also `stores` (every Store column), `chain_layouts` (`[{chain, layout}]`) and `store_products` (every column, `price` in dollars), which `import` reads back |
-| `import` | `import` | array of `{line, action, id, asset_id, name, location, lots, error}`; meta `format`, `dry_run`, `batch`, `summary`, `ignored_columns`, `warnings` |
+| `export -f json\|jsonl\|yaml\|toon` | `export` | array of Item + `lots` (all lots, any status); meta `profile`; json/yaml/toon also `stores` (every Store column), `chain_layouts` (`[{chain, layout}]`), `store_products` (every column, `price` in dollars) and `receipts` (every column, money in dollars, `image` base64 or null), which `import` reads back |
+| `import` | `import` | array of `{line, action, id, asset_id, name, location, lots, error}`; meta `format`, `dry_run`, `batch`, `summary`, `stores`, `receipts` (how many were read from the envelope), `ignored_columns`, `warnings` |
 | `profile ls` / `show` / `init` | `profiles` / `profile` / `profile_init` | `{name, title, address, rented, db_path, exists, active, source}` (+ `items`, `locations`, `value` in `show`) |
 | `preset ls` | `presets` | array of `{name, category, description, tracks, shelf_life, intervals, alert_days, origin}` (`shelf_life`: the default shelf-life type; `intervals`: text such as `replace every 10 years`) |
 | `preset show` | `preset` | the preset as in its TOML file: `{name, description, category, tracks, alert_days, notes, shelf_life (a type name, or an inline table in old user files), intervals: {replace, inspect, service, appraise, warranty}, defaults: {unit, labels, fields}, sources: [{covers, cite, url}], origin}` |
@@ -88,6 +88,8 @@ the same objects as JSON. A single-object result prints as one line.
 | `store layout` | `store_layout` | array of `{n, section, title, aisles}`; meta `layout`, `layout_source`, `store`, `chain` |
 | `store use` | `profile_stores` | `{profile, stores}` |
 | `source add` / `edit`, `source ls` | `store_product` / `store_products` | `{id, food, store, store_name, chain, name, brand, size, price, price_seen, url, sku, plu, upc, section, aisle, notes, item_id, at}` (`at`: the store's name, or the chain); `source add` adds `section_guessed`, `section_basis` (`category url name food`); `source ls FOOD` adds `link` (`name item head noun`) |
+| `receipt import`, `receipt apply` | `receipt_import` | array of lines `{file, n, text, name, code, code_kind, qty, unit, size, unit_price, total, discount, voided, action, item, item_id, tier, confidence, shelf_life, lot, lot_qty, lot_unit}` (`action` ∈ `add new skip void`, `tier` ∈ `code product food item new edited`, money in dollars, `lot` set when a lot was written); meta `dry_run`, `receipts` (`[{file, kind, receipt_id, fingerprint, chain, store, date, time, subtotal, tax, total, review_file, lots, items_created, products_created, products_updated, below_threshold, skipped: [{n, text, why, amount}], warnings}]`) |
+| `receipt ls`, `receipt show` | `receipts` / `receipt` | `{id, date, time, store, chain, subtotal, tax, total, lines, lots, file, image, fingerprint, created_at}`; `show` adds meta `lots` (`[{line, lot, item, asset_id, item_id, qty, unit, unit_price, status, acquired_at, vendor}]`) |
 | `list explain` | `explain` | array of `{item, asset_id, item_id, location, identifier, url, pinned, attribute, name, name_score, excluded, location_ok, food, tier, score, via, result}` (`result` `not food (food list)` when only the food gate kept it out) (each tier: what hit, else null); meta `entry`, `threshold`, `ambiguous` |
 | `match` | `match` | array of `{item, asset_id, item_id, tier, score, via, on_hand, unit, expired, location, status, profile}`; meta `query`, `threshold`, `ambiguous` |
 | `cohort new` / `show` / `add`, `cohort ls` | `cohort` / `cohorts` | `{slug, name, notes, matcher, includes, path}` + the matcher fields |
@@ -184,3 +186,14 @@ is ready. Wishlists always exit 0.
 wherebox ls --at Garage --json | jq -r '.data[] | "\(.asset_id)\t\(.name)\t\(.value // "")"'
 wherebox expiring --within 3d --json | jq -r '.data[] | select(.state == "expired") | .item'
 ```
+
+## Receipt review file (`wherebox/receipt-review/v1`)
+
+Written by `receipt import` without `--yes` (or with `--review FILE`), read
+by `receipt apply`. `{schema, receipt: {fingerprint, file, kind, chain,
+store, date, time, subtotal, tax, total, keep_image, warnings, ocr_text},
+lines: [{n, text, name, code, code_kind, qty, unit, size, unit_price, total,
+discount, voided, tier, confidence, action, item, item_name, new_name,
+shelf_life, product_id}], skipped: [{n, text, why, amount}]}`. Edit
+`action` (`add` to `item`, an id, asset id or name; `new` named `new_name`
+with shelf-life type `shelf_life`; `skip`) and `qty`; money is in dollars.

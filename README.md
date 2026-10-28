@@ -142,6 +142,9 @@ HB.import_ref,HB.location,HB.label,HB.quantity,HB.name,HB.asset_id,HB.descriptio
   status changes, valuations, attachments, consumption).
 * **Attachments** (photos, receipts, manuals, warranties), content-addressed
   and sealed with the database's keys.
+* **Grocery receipts**: photos, PDFs or emailed receipts become lots with
+  the store, price and date, through local OCR (tesseract, poppler); chain
+  profiles for Sprouts and ALDI, a review step, and no double imports.
 * **Consumables**: lots with acquired, opened, frozen and (printed) best-by
   dates and their own place (fridge, freezer, pantry shelf). `use`, `eat` and
   `toss` draw from the oldest lot first; `expiring` lists what to eat or toss.
@@ -435,6 +438,62 @@ generic produce-first, frozen-last order; set one per chain once. `lot add
 in JSON exports (`export -f json`, `import`), not in Homebox CSV.
 Details: docs/SPEC.md, "Stores and sourcing".
 
+## Grocery receipts
+
+Grocery chains (Sprouts, ALDI and most others) are not on Amazon, so their
+purchases come in from receipts: a photo, a PDF, or an emailed receipt saved
+as text. `wherebox receipt import` turns each line into a lot, with the
+store, the price paid and the purchase date:
+
+```sh
+wherebox -P beach-house receipt import sprouts.jpg --yes         # accept confident matches
+wherebox -P beach-house receipt import aldi.pdf email.txt        # on a terminal: confirm, edit or skip each line
+wherebox -P beach-house receipt import sprouts.jpg --review r.json   # write a review file instead
+wherebox -P beach-house receipt apply r.json                     # ... and apply it after editing
+wherebox -P beach-house receipt import sprouts.jpg --dry-run --yes   # show what would happen
+wherebox -P beach-house receipt ls                               # imported receipts
+wherebox -P beach-house receipt show 01M606N4 [--text] [--extract-image FILE]
+```
+
+```console
+$ wherebox receipt import sprouts.txt --yes
+sprouts.txt: imported receipt 01M606N40A0SPKPS2P2WS0GTQB: 5 lot(s), 4 new item(s), 4 store product(s) new, 1 updated
+N   TEXT                  QTY   UNIT  TOTAL  ACTION  ITEM                              TIER  CONFIDENCE
+──  ────────────────────  ────  ────  ─────  ──────  ────────────────────────────────  ────  ──────────
+ 7  ORG BANANAS           2.12  lb     2.10  new     Organic Bananas                   new         0.80
+ 9  AVOCADO HASS          3.00  ea     3.75  new     Hass Avocado                      new         0.80
+11  ORG BANANAS           1.00  ea     1.88  new     Organic Bananas                   new         0.80
+12  GRK YGRT PLAIN 32 OZ  1.00  ea     4.49  new     Greek Yogurt Plain                new         0.80
+14  WLNT HALVES 16 OZ     1.00  ea     8.99  void                                                  0.00
+16  BNLS SKNLS CHKN BRST  1.50  lb    10.49  new     Boneless Skinless Chicken Breast  new         0.80
+```
+
+* **OCR is local.** Images go through the `tesseract` CLI (`brew install
+  tesseract`, `apt install tesseract-ocr`); PDFs through poppler's
+  `pdftotext`, or `pdftoppm` + tesseract for scans (`brew install poppler`,
+  `apt install poppler-utils`). Text files are read as they are. Nothing
+  goes over the network.
+* **Parsing** handles PLU/UPC/SKU codes, `3 @ 1.25` quantities, `2.12 lb @
+  0.99 /lb` weights, coupons, voids, ALDI-style `PRICE YOU PAY` lines, fees
+  (bags, bottle deposits, left out) and totals; it warns when the lines do
+  not add up. Chain profiles (Sprouts, ALDI, generic) and the abbreviation
+  table (`ORG` organic, `BNLS` boneless, `GRND` ground...) are data, in
+  `data/receipts.toml`.
+* **The store** is found from the header (chain, then address), else
+  `--store`. **Lines match** a store product with the same code, a store
+  product's name, a food by head noun, an item by name, else a new item
+  (with a shelf-life type guessed from its name).
+* **Effects**: a lot per line (date, unit price after discounts, vendor =
+  the store, linked to the receipt), the store product's price and code
+  updated or created. A receipt is imported once (a fingerprint of store,
+  date, time, total and lines); `--force` imports it again.
+* **Receipts are kept** with their OCR text (and file path, unless
+  `--no-path`); the image itself only with `--keep-image`, inside the
+  encrypted database. They travel in `export -f json` / `import`.
+
+Details: docs/SPEC.md, "Receipts"; `wherebox receipt import --help` and
+`man wherebox-receipt-import` (from `wherebox man --dir DIR`).
+
 ## Homebox CSV
 
 `wherebox export` (or `--format homebox`) writes exactly the columns of
@@ -555,6 +614,8 @@ data cannot be recovered.
 | `cohort new\|ls\|show\|add\|rm` | named, reusable matchers (`nuts` = walnuts, pecans, label nuts) |
 | `store add\|ls\|show\|edit\|rm\|layout\|use` | stores near a property, their layouts, the profile's stores |
 | `source add\|ls\|edit\|rm` | store products: where to buy a food, section, aisle, notes |
+| `receipt import FILE... [--yes] [--review F] [--dry-run]` | grocery receipts (photo, PDF, text) into lots with store, price and date; local OCR |
+| `receipt apply\|ls\|show` | apply an edited review file; imported receipts and their lots |
 | `match [QUERY] [--asin --upc --url ...]` | the matching ladder over a profile, without a list |
 | `report insurance [--all-profiles] [--owner O] [--min-value N] [--bought-after DATE] -f csv\|xlsx\|html\|pdf` | insurance inventory with totals and gaps |
 | `report warranties [--expiring 90d] [--all-profiles]` | warranties ending soon |
@@ -649,6 +710,9 @@ SQLite schema, managed by versioned migrations in `src/migrations.rs`:
   `chain_layouts(chain, layout)` and `store_products(food, store_id | chain,
   name, brand, size, price, price_seen, url, sku, plu, upc, section, aisle,
   notes, item_id)`: where to buy what, per property
+* `receipts(id, fingerprint, store_id, chain, purchased_on, purchased_time,
+  subtotal, tax, total, ocr_text, source_path, image)`: imported receipts;
+  their lots have `source_ref = receipt:<id>:<line>`
 * `import_batches`
 
 Kind presets are TOML files (`presets/kinds/`, compiled in; overrides in
