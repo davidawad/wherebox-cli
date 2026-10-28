@@ -995,9 +995,11 @@ pub fn run(ctx: &Ctx, a: ImportArgs) -> Result<()> {
         let text = read_input(&a.file)?;
         let fmt = detect_format(&a.file, explicit, &text);
         if fmt == InputFormat::Json {
-            // a wherebox/v1 export also carries stores and store products
+            // a wherebox/v1 export also carries stores, store products and receipts
             envelope = serde_json::from_str::<Value>(&text).ok().filter(|v| {
-                ["stores", "chain_layouts", "store_products"].iter().any(|k| v.get(k).is_some_and(Value::is_array))
+                ["stores", "chain_layouts", "store_products", "receipts"]
+                    .iter()
+                    .any(|k| v.get(k).is_some_and(Value::is_array))
             });
         }
         let delim = a
@@ -1108,6 +1110,7 @@ pub fn run(ctx: &Ctx, a: ImportArgs) -> Result<()> {
         not_perishable: Vec::new(),
     };
     let mut stores = crate::sourcing::Imported::default();
+    let mut receipts = 0;
     db.begin()?;
     let result = (|| -> Result<Vec<String>> {
         for g in &groups {
@@ -1118,6 +1121,7 @@ pub fn run(ctx: &Ctx, a: ImportArgs) -> Result<()> {
         }
         if let Some(env) = &envelope {
             stores = crate::sourcing::import(&db, env)?;
+            receipts = crate::intake::import(&db, env)?;
         }
         let mut warnings = ap.link_parents()?;
         if !ap.not_perishable.is_empty() {
@@ -1162,7 +1166,7 @@ pub fn run(ctx: &Ctx, a: ImportArgs) -> Result<()> {
     ));
     if envelope.is_some() {
         ctx.info(&format!(
-            "{} store(s), {} chain layout(s), {} store product(s)",
+            "{} store(s), {} chain layout(s), {} store product(s), {receipts} receipt(s)",
             stores.stores, stores.chain_layouts, stores.store_products
         ));
     }
@@ -1186,6 +1190,7 @@ pub fn run(ctx: &Ctx, a: ImportArgs) -> Result<()> {
                    "locations_created": t.locations, "labels_created": t.labels, "lots": t.lots}),
         )
         .meta("stores", json!(stores))
+        .meta("receipts", json!(receipts))
         .meta("ignored_columns", json!(ignored))
         .meta("warnings", json!(warnings));
     if out.format == Format::Table && !a.dry_run && !ctx.resolved.flag("verbose") {

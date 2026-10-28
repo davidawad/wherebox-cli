@@ -78,11 +78,12 @@ pub fn run(ctx: &Ctx, a: ExportArgs) -> Result<()> {
             .collect();
         let mut r =
             Report::list("export", records).exact().meta("profile", json!(ctx.profile.as_ref().map(|p| &p.name)));
-        // stores and store products travel in the envelope (not in flat rows)
+        // stores, store products and receipts travel in the envelope (not in flat rows)
         if out.format.is_envelope() {
             for (k, v) in crate::sourcing::export(&db)? {
                 r = r.meta(k, v);
             }
+            r = r.meta("receipts", crate::intake::export(&db)?);
         }
         r
     };

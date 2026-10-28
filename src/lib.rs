@@ -19,6 +19,7 @@ pub mod enc_config;
 pub mod error;
 pub mod fields;
 pub mod food;
+pub mod intake;
 pub mod keyfile;
 pub mod keys;
 pub mod keysetup;
