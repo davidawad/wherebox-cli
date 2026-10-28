@@ -205,6 +205,29 @@ CREATE INDEX IF NOT EXISTS idx_store_products_store ON store_products(store_id);
 ALTER TABLE lots ADD COLUMN vendor TEXT;
 ";
 
+/// Receipt intake (docs/SPEC.md, "Receipts"): every imported receipt, with
+/// its OCR text; its lots carry `source_ref = receipt:<id>:<line>`.
+const SCHEMA_V5: &str = r"
+CREATE TABLE IF NOT EXISTS receipts (
+    id              TEXT PRIMARY KEY,
+    fingerprint     TEXT NOT NULL,
+    store_id        TEXT,
+    chain           TEXT,
+    purchased_on    TEXT,
+    purchased_time  TEXT,
+    subtotal        INTEGER,
+    tax             INTEGER,
+    total           INTEGER,
+    lines           INTEGER NOT NULL DEFAULT 0,
+    ocr_text        TEXT NOT NULL,
+    source_path     TEXT,
+    image_name      TEXT,
+    image           TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_receipts_fingerprint ON receipts(fingerprint);
+";
+
 pub const MIGRATIONS: &[Migration] = &[
     Migration { version: 1, name: "inventory schema", apply: |db| db.execute_batch(SCHEMA_V1) },
     Migration { version: 2, name: "lot unit price and source ref", apply: |db| db.execute_batch(SCHEMA_V2) },
@@ -217,6 +240,7 @@ pub const MIGRATIONS: &[Migration] = &[
         },
     },
     Migration { version: 4, name: "stores, chain layouts and store products", apply: |db| db.execute_batch(SCHEMA_V4) },
+    Migration { version: 5, name: "receipts", apply: |db| db.execute_batch(SCHEMA_V5) },
 ];
 
 /// A built-in preset's old lot fill: (field, fridge, freezer, pantry).
@@ -431,7 +455,7 @@ mod tests {
         lot("R2", &ribeye, Some("2026-01-10"), None); // typed in: kept as the printed date
         lot("M1", &milk, None, Some("2026-01-09"));
         lot("P1", &rice, None, Some("2027-01-01"));
-        assert_eq!(migrate(&db).unwrap(), [3, 4]);
+        assert_eq!(migrate(&db).unwrap(), [3, 4, 5]);
         let got = |id: &str| {
             let r = db.query_opt("SELECT expires_at, best_by FROM lots WHERE id = ?1", &[text(id)]).unwrap().unwrap();
             (r.s(0), r.s(1))
@@ -467,8 +491,8 @@ mod tests {
             &[text(&i.id)],
         )
         .unwrap();
-        assert_eq!(migrate(&db).unwrap(), [4]);
-        assert_eq!(current_version(&db).unwrap(), 4);
+        assert_eq!(migrate(&db).unwrap(), [4, 5]);
+        assert_eq!(current_version(&db).unwrap(), 5);
         let lot = store::get_lot(&db, "L1").unwrap().unwrap();
         assert_eq!((lot.qty, lot.vendor), (2.0, None));
         use crate::sourcing::{self, Product, Store};
