@@ -33,6 +33,7 @@ pub mod perms;
 pub mod presets;
 pub mod profiles;
 pub mod prompt;
+pub mod receipt;
 pub mod seal_output;
 pub mod sheet;
 pub mod shelf_life;

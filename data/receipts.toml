@@ -1,0 +1,182 @@
+# Receipt parsing data (docs/SPEC.md, "Receipts").
+#
+# abbreviations  receipt-speak expanded word by word before matching
+#                ("ORG BNLS CHKN BRST" -> "organic boneless chicken breast").
+#                Keys are lower case, one word; values any text.
+# fee_words      lines that are not purchases (bags, deposits): left out.
+# discount_words lines that take money off the item above.
+# [[chain]]      chain profiles: how one chain's receipts read. A chain is
+#                detected when one of its `detect` phrases is in the header
+#                (whole words, any case). `generic` is the fallback.
+#
+# Chain fields:
+#   name               the chain, as stored on stores (`store add --chain`)
+#   detect             header phrases
+#   sku_digits         digit-run lengths that are the chain's own item codes
+#   date_order         "mdy" (default) or "dmy" for numeric dates
+#   final_price_words  lines whose amount is the item above's final price
+#   discount_words     extra discount words
+#   fee_words          extra fee words
+#   abbreviations      extra abbreviations, over the shared table
+
+fee_words = [
+    "bag", "bags", "bag fee", "paper bag", "plastic bag", "reusable bag", "bag credit", "bag tax",
+    "bottle deposit", "deposit", "crv", "container deposit", "bottle dep", "btl dep",
+]
+
+discount_words = [
+    "coupon", "cpn", "discount", "disc", "savings", "instant savings", "promo", "mfr", "member",
+    "digital coupon", "off", "markdown",
+]
+
+[abbreviations]
+org = "organic"
+orgnc = "organic"
+bnls = "boneless"
+bnlss = "boneless"
+sknls = "skinless"
+grnd = "ground"
+chkn = "chicken"
+chk = "chicken"
+brst = "breast"
+thgh = "thigh"
+thghs = "thighs"
+bf = "beef"
+prk = "pork"
+tky = "turkey"
+trky = "turkey"
+slmn = "salmon"
+shrmp = "shrimp"
+whl = "whole"
+grk = "greek"
+ygrt = "yogurt"
+yog = "yogurt"
+mlk = "milk"
+chs = "cheese"
+chz = "cheese"
+chdr = "cheddar"
+shrd = "shredded"
+mozz = "mozzarella"
+btr = "butter"
+crm = "cream"
+hvy = "heavy"
+whp = "whipping"
+lg = "large"
+lrg = "large"
+sm = "small"
+med = "medium"
+xl = "extra large"
+dz = "dozen"
+frz = "frozen"
+frzn = "frozen"
+fz = "frozen"
+veg = "vegetable"
+vegs = "vegetables"
+frt = "fruit"
+jce = "juice"
+oj = "orange juice"
+evoo = "extra virgin olive oil"
+choc = "chocolate"
+van = "vanilla"
+pnut = "peanut"
+pb = "peanut butter"
+almd = "almond"
+wlnt = "walnut"
+wlnts = "walnuts"
+cshw = "cashew"
+bnna = "banana"
+bnnas = "bananas"
+ban = "bananas"
+avo = "avocado"
+avoc = "avocado"
+avcdo = "avocado"
+strwb = "strawberries"
+strw = "strawberries"
+blueb = "blueberries"
+blbry = "blueberries"
+rasp = "raspberries"
+tom = "tomatoes"
+toms = "tomatoes"
+pots = "potatoes"
+oni = "onion"
+onin = "onion"
+grn = "green"
+rd = "red"
+ylw = "yellow"
+wht = "white"
+brn = "brown"
+brwn = "brown"
+swt = "sweet"
+pep = "pepper"
+pepr = "pepper"
+spnch = "spinach"
+spin = "spinach"
+lttc = "lettuce"
+rom = "romaine"
+brc = "broccoli"
+broc = "broccoli"
+crt = "carrots"
+crts = "carrots"
+cuc = "cucumber"
+cuke = "cucumber"
+zuc = "zucchini"
+grlc = "garlic"
+lmn = "lemon"
+lmns = "lemons"
+appl = "apple"
+appls = "apples"
+grp = "grapes"
+rce = "rice"
+pst = "pasta"
+sce = "sauce"
+brd = "bread"
+sdgh = "sourdough"
+tort = "tortillas"
+bgl = "bagels"
+ff = "fat free"
+lf = "low fat"
+rf = "reduced fat"
+nf = "nonfat"
+pct = "percent"
+gf = "gluten free"
+uns = "unsalted"
+slt = "salted"
+rstd = "roasted"
+nat = "natural"
+pk = "pack"
+ct = "count"
+bnch = "bunch"
+hd = "head"
+
+[[chain]]
+name = "Sprouts"
+detect = ["sprouts farmers market", "sprouts"]
+sku_digits = []
+date_order = "mdy"
+final_price_words = []
+discount_words = ["sprouts deal", "digital deal"]
+fee_words = []
+[chain.abbreviations]
+spr = "sprouts"
+sfm = "sprouts"
+
+[[chain]]
+name = "ALDI"
+detect = ["aldi"]
+sku_digits = [6, 7]
+date_order = "mdy"
+final_price_words = ["price you pay"]
+discount_words = ["instant savings", "aldi savings"]
+fee_words = []
+[chain.abbreviations]
+hf = "happy farms"
+sn = "simply nature"
+
+[[chain]]
+name = "generic"
+detect = []
+sku_digits = [6, 7]
+date_order = "mdy"
+final_price_words = ["price you pay", "you pay"]
+discount_words = []
+fee_words = []
