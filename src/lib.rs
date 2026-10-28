@@ -25,6 +25,7 @@ pub mod keysetup;
 pub mod lists;
 pub mod matching;
 pub mod migrations;
+pub mod ocr;
 pub mod onhand;
 pub mod output;
 pub mod paths;
