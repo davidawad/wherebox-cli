@@ -17,6 +17,8 @@ pub trait Prompter {
     fn confirm(&mut self, question: &str) -> Result<bool>;
     /// Read a secret without echo.
     fn secret(&mut self, prompt: &str) -> Result<Zeroizing<String>>;
+    /// Ask for a line of text (trimmed).
+    fn ask(&mut self, question: &str) -> Result<String>;
 }
 
 /// `y`, `yes` and an empty answer are yes.
@@ -48,6 +50,17 @@ impl Prompter for Terminal {
         rpassword::prompt_password(prompt)
             .map(Zeroizing::new)
             .map_err(|e| key_error(format!("reading passphrase: {e}")))
+    }
+
+    fn ask(&mut self, question: &str) -> Result<String> {
+        eprint!("{question} ");
+        let _ = std::io::stderr().flush();
+        let mut line = String::new();
+        std::io::stdin()
+            .lock()
+            .read_line(&mut line)
+            .map_err(|e| crate::error::AppError::io(format!("reading answer: {e}")))?;
+        Ok(line.trim().to_string())
     }
 }
 
@@ -83,6 +96,11 @@ impl<R: BufRead, W: Write> Prompter for Scripted<R, W> {
     fn secret(&mut self, prompt: &str) -> Result<Zeroizing<String>> {
         let _ = write!(self.output, "{prompt}");
         self.line()
+    }
+
+    fn ask(&mut self, question: &str) -> Result<String> {
+        let _ = write!(self.output, "{question} ");
+        Ok(self.line()?.trim().to_string())
     }
 }
 

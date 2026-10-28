@@ -15,6 +15,7 @@ pub mod lots;
 pub mod misc;
 pub mod preset;
 pub mod profile;
+pub mod receipt_cmd;
 pub mod regroup;
 pub mod report;
 pub mod security;
@@ -36,6 +37,7 @@ pub fn dispatch(ctx: &Ctx, cmd: Command) -> Result<Status> {
         Command::Match(a) => list_cmd::match_cmd(ctx, a),
         Command::Store(c) => store_cmd::store(ctx, c),
         Command::Source(c) => store_cmd::source(ctx, c),
+        Command::Receipt(c) => receipt_cmd::run(ctx, c),
         Command::Add(a) => items::add(ctx, a),
         Command::Edit(a) => items::edit(ctx, a),
         Command::Mv(a) => items::mv(ctx, a),

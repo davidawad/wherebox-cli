@@ -8,6 +8,7 @@ use crate::output::Format;
 
 pub use crate::cli_admin::{AuditCmd, ConfigCmd, DbCmd, KeyCmd};
 pub use crate::cli_lists::{CohortCmd, EntryFlags, ListCmd, MatchArgs, MatcherFlags};
+pub use crate::cli_receipts::{ReceiptCmd, ReceiptImportArgs};
 pub use crate::cli_stores::{SourceCmd, SourceFlags, StoreCmd, StoreFlags};
 
 #[derive(Debug, Parser)]
@@ -164,6 +165,9 @@ pub enum Command {
     /// Store products: where to buy a food, at which store, in which section and aisle
     #[command(subcommand)]
     Source(SourceCmd),
+    /// Grocery receipts (photo, PDF or emailed text) into lots, with store, price and date
+    #[command(subcommand)]
+    Receipt(ReceiptCmd),
     /// Reports: insurance inventory, warranties
     #[command(subcommand)]
     Report(ReportCmd),

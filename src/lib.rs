@@ -7,6 +7,7 @@ pub mod audit;
 pub mod cli;
 pub mod cli_admin;
 pub mod cli_lists;
+pub mod cli_receipts;
 pub mod cli_stores;
 pub mod commands;
 pub mod config;
