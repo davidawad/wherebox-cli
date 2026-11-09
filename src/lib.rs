@@ -25,6 +25,7 @@ pub mod keyfile;
 pub mod keys;
 pub mod keysetup;
 pub mod lists;
+pub mod location;
 pub mod matching;
 pub mod migrations;
 pub mod ocr;

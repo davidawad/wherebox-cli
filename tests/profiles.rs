@@ -161,3 +161,33 @@ fn init_on_a_fresh_machine_creates_a_private_config() {
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     assert!(e2.path("config").join("wherebox-cli").join("config.toml").exists());
 }
+
+/// The default location: `[location] cmd`, else `[location] profile/address`;
+/// a failing command or an explicit choice falls through.
+#[test]
+fn default_location_picks_the_profile() {
+    let e = Env::new();
+    let dir = e.path("config").join("wherebox-cli");
+    std::fs::create_dir_all(&dir).unwrap();
+    let write = |location: &str| {
+        std::fs::write(
+            dir.join("config.toml"),
+            format!("[profiles.cabin]\ntitle = \"Cabin\"\n[profiles.lake]\ntitle = \"Lake\"\n[location]\n{location}"),
+        )
+        .unwrap()
+    };
+    let active = |extra: &[&str]| {
+        let v = run(&e, &[extra, &["profile", "ls"]].concat());
+        rows(&v).iter().find(|r| r["active"] == true).map(|r| r["name"].as_str().unwrap().to_string())
+    };
+    write(
+        "cmd = \"printf '{\\\"profile\\\":\\\"lake\\\",\\\"address\\\":\\\"1 Shore Rd\\\"}'\"\nprofile = \"cabin\"\n",
+    );
+    assert_eq!(active(&[]).as_deref(), Some("lake"));
+    assert_eq!(run(&e, &["profile", "show"])["data"]["address"], "1 Shore Rd");
+    assert_eq!(active(&["--profile", "cabin"]).as_deref(), Some("cabin"), "an explicit profile wins");
+    write("cmd = \"exit 3\"\nprofile = \"cabin\"\n");
+    assert_eq!(active(&[]).as_deref(), Some("cabin"), "a failing command falls back to the static location");
+    write("cmd = \"exit 3\"\n");
+    assert_eq!(active(&[]), None, "both unset or failing: no location");
+}

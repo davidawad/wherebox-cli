@@ -63,6 +63,27 @@ pub const SETTINGS: &[Setting] = &[
         kind: Kind::Str,
     },
     Setting {
+        key: "location_cmd",
+        env: &["WHEREBOX_LOCATION_CMD"],
+        help: "command printing {\"profile\", \"address\"} JSON for where you are: the default profile when none is chosen (ignored when it fails)",
+        choices: &[],
+        kind: Kind::Str,
+    },
+    Setting {
+        key: "location_profile",
+        env: &["WHEREBOX_LOCATION_PROFILE"],
+        help: "default location's profile when location_cmd is unset or fails",
+        choices: &[],
+        kind: Kind::Str,
+    },
+    Setting {
+        key: "location_address",
+        env: &["WHEREBOX_LOCATION_ADDRESS"],
+        help: "default location's street address when location_cmd is unset or fails",
+        choices: &[],
+        kind: Kind::Str,
+    },
+    Setting {
         key: "expiring_within",
         env: &["WHEREBOX_EXPIRING_WITHIN"],
         help: "default look-ahead for `wherebox expiring` (e.g. 3d, 2w)",

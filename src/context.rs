@@ -22,6 +22,8 @@ pub struct Ctx {
     pub db_path: PathBuf,
     /// The property profile in use, if any (see [`crate::profiles`]).
     pub profile: Option<crate::profiles::Profile>,
+    /// The default location, resolved on first use (see [`crate::location`]).
+    location: std::cell::OnceCell<Option<crate::location::Location>>,
     /// `--format` exactly as given on the command line (import reads it as the input format).
     pub format_flag: Option<Format>,
     /// `--json` was given.
@@ -91,10 +93,28 @@ impl Ctx {
         // layer except for flags: `--profile` beats WHEREBOX_DB,
         // WHEREBOX_PROFILE beats WHEREBOX_DB, `--db` beats `--profile`.
         let (ps, ds) = (resolved.source("profile"), resolved.source("db_path"));
-        let profile = Some(resolved.get("profile"))
+        let mut profile = Some(resolved.get("profile"))
             .filter(|p| !p.is_empty() && (ps > ds || (ps == ds && ps != config::Source::Flag)))
             .map(|p| crate::profiles::get(&resolved.config_path, p))
             .transpose()?;
+        // Nothing chose a database: the default location may (crate::location).
+        let location = std::cell::OnceCell::new();
+        if profile.is_none() && ds == config::Source::Default {
+            let note = |m: &str| {
+                if resolved.flag("verbose") {
+                    eprintln!("wherebox: {m}");
+                }
+            };
+            let loc = crate::location::resolve(&resolved, &note);
+            profile =
+                loc.as_ref().and_then(|l| Some((l.profile.as_deref()?, l.address.clone()))).and_then(|(name, addr)| {
+                    let mut p = crate::profiles::get(&resolved.config_path, name).ok()?;
+                    p.address = p.address.or(addr);
+                    note(&format!("profile {} from the default location", p.name));
+                    Some(p)
+                });
+            let _ = location.set(loc);
+        }
         let db_path = profile
             .as_ref()
             .map_or_else(|| PathBuf::from(crate::paths::expand_tilde(resolved.get("db_path"))), |p| p.db_path.clone());
@@ -109,6 +129,7 @@ impl Ctx {
             tz,
             db_path,
             profile,
+            location,
             format_flag: g.format,
             json_flag: g.json,
             insecure: g.insecure_plaintext,
@@ -120,6 +141,11 @@ impl Ctx {
             output_kind: Cell::new("stdout"),
             touched_db: Cell::new(false),
         })
+    }
+
+    /// The default location (`location_cmd`, else `[location]`), if any.
+    pub fn location(&self) -> Option<&crate::location::Location> {
+        self.location.get_or_init(|| crate::location::resolve(&self.resolved, &|m| self.verbose(m))).as_ref()
     }
 
     pub fn key_source(&self) -> Result<keys::Source> {

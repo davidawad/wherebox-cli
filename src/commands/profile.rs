@@ -127,6 +127,11 @@ fn init(ctx: &Ctx, name: Option<&str>, title: Option<&str>, address: Option<&str
     if let Some(a) = address {
         p.address = Some(a.trim().to_string()).filter(|a| !a.is_empty());
     }
+    // No address anywhere: the default location's, unless it names another profile.
+    if p.address.is_none() {
+        p.address =
+            ctx.location().filter(|l| l.profile.as_deref().is_none_or(|n| n == p.name)).and_then(|l| l.address.clone());
+    }
     let pc = if ctx.db_path == p.db_path { None } else { Some(with_profile(ctx, &p)?) };
     let c = pc.as_ref().unwrap_or(ctx);
     let existed = p.db_path.exists();

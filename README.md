@@ -304,6 +304,24 @@ Set `rented = true` for a rental. `shopping --all-profiles` and
 `report insurance --all-profiles` roll up every property that has a
 database.
 
+### Default location
+
+When nothing chooses a property (no `--profile`, `WHEREBOX_PROFILE`,
+`profile`, `--db` or `WHEREBOX_DB`), the default location may:
+
+```toml
+[location]
+cmd = "wherebox-location"   # prints {"profile": "lake-house", "address": "1 Shore Rd"}
+profile = "lake-house"      # used when cmd is unset or fails
+address = "1 Shore Rd"
+```
+
+`cmd` runs through `sh -c` (3 s limit) and prints one JSON object, both fields
+optional. A failing, slow or empty command is ignored and the static
+`profile`/`address` are used; when those are unset too there is no default.
+The location's address fills in the profile's when its config has none, and is
+the default `--address` of `profile init`.
+
 ## Presets, shopping and reports
 
 ```sh
@@ -652,6 +670,9 @@ defaults; the config file (`--config FILE`, else `$WHEREBOX_CONFIG`, else
 |-----|-----|---------|--------|
 | `db_path` | `WHEREBOX_DB` | `$XDG_DATA_HOME/wherebox-cli/wherebox.db` | path (`~` expanded) |
 | `profile` | `WHEREBOX_PROFILE` | — | property profile (see [Properties](#properties-profiles)) |
+| `location_cmd` | `WHEREBOX_LOCATION_CMD` | — | command printing the default location as JSON (see [Default location](#default-location)) |
+| `location_profile` | `WHEREBOX_LOCATION_PROFILE` | — | default location's profile when `location_cmd` is unset or fails |
+| `location_address` | `WHEREBOX_LOCATION_ADDRESS` | — | default location's address when `location_cmd` is unset or fails |
 | `expiring_within` | `WHEREBOX_EXPIRING_WITHIN` | `7d` | default look-ahead of `expiring` |
 | `match_threshold` | `WHEREBOX_MATCH_THRESHOLD` | `0.82` | fuzzy name-match threshold of lists, cohorts and `match` |
 | `format` | `WHEREBOX_FORMAT` | `table` | `table json jsonl csv tsv yaml toon markdown html org homebox` |
